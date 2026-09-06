@@ -1,5 +1,3 @@
-import * as FileSystem from 'expo-file-system/legacy';
-
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
 // Groq's vision-capable models as of this writing. Scout is fast and cheap and
@@ -49,8 +47,7 @@ function extractJson(text: string): unknown {
   return JSON.parse(text.slice(start, end + 1));
 }
 
-export async function suggestTagsForPhoto(photoUri: string): Promise<TagSuggestion> {
-  const base64 = await FileSystem.readAsStringAsync(photoUri, { encoding: 'base64' });
+export async function suggestTagsForPhoto(base64: string): Promise<TagSuggestion> {
   const model = process.env.EXPO_PUBLIC_GROQ_VISION_MODEL || DEFAULT_MODEL;
 
   const response = await fetch(GROQ_API_URL, {

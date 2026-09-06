@@ -1,4 +1,3 @@
-import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -13,20 +12,15 @@ import { useTheme } from '@/hooks/use-theme';
 import { createItem } from '@/lib/db';
 import { suggestTagsForPhoto } from '@/lib/groq';
 
-const PHOTOS_DIR = `${FileSystem.documentDirectory}photos/`;
-
-async function persistPhoto(sourceUri: string): Promise<string> {
-  await FileSystem.makeDirectoryAsync(PHOTOS_DIR, { intermediates: true }).catch(() => {});
-  const destUri = `${PHOTOS_DIR}${Date.now()}.jpg`;
-  await FileSystem.copyAsync({ from: sourceUri, to: destUri });
-  return destUri;
-}
-
 export default function AddItemScreen() {
   const router = useRouter();
   const theme = useTheme();
 
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  // Kept as base64 (not a file:// URI) so this works identically on native and web:
+  // expo-image-picker's base64 option is cross-platform, whereas the file URIs it
+  // returns are not (and expo-file-system has no document directory on web).
+  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
+  const photoUri = photoBase64 ? `data:image/jpeg;base64,${photoBase64}` : null;
   const [analyzing, setAnalyzing] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -38,10 +32,10 @@ export default function AddItemScreen() {
   const [notes, setNotes] = useState('');
   const [tags, setTags] = useState<string[]>([]);
 
-  async function analyze(uri: string) {
+  async function analyze(base64: string) {
     setAnalyzing(true);
     try {
-      const suggestion = await suggestTagsForPhoto(uri);
+      const suggestion = await suggestTagsForPhoto(base64);
       setName(suggestion.name);
       setCharacter(suggestion.character ?? '');
       setSeries(suggestion.series ?? '');
@@ -65,16 +59,15 @@ export default function AddItemScreen() {
       return;
     }
 
+    const options: ImagePicker.ImagePickerOptions = { quality: 0.7, allowsEditing: true, base64: true };
     const result =
-      source === 'camera'
-        ? await ImagePicker.launchCameraAsync({ quality: 0.7, allowsEditing: true })
-        : await ImagePicker.launchImageLibraryAsync({ quality: 0.7, allowsEditing: true });
+      source === 'camera' ? await ImagePicker.launchCameraAsync(options) : await ImagePicker.launchImageLibraryAsync(options);
 
-    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets?.[0];
+    if (result.canceled || !asset?.base64) return;
 
-    const savedUri = await persistPhoto(result.assets[0].uri);
-    setPhotoUri(savedUri);
-    await analyze(savedUri);
+    setPhotoBase64(asset.base64);
+    await analyze(asset.base64);
   }
 
   async function handleSave() {
@@ -121,11 +114,11 @@ export default function AddItemScreen() {
               <Pressable style={[styles.button, { backgroundColor: theme.backgroundElement }]} onPress={() => pickFrom('library')}>
                 <ThemedText>Choose from Library</ThemedText>
               </Pressable>
-              {photoUri && (
+              {photoBase64 && (
                 <Pressable
                   style={[styles.button, { backgroundColor: theme.backgroundElement }]}
                   disabled={analyzing}
-                  onPress={() => analyze(photoUri)}>
+                  onPress={() => analyze(photoBase64)}>
                   <ThemedText>{analyzing ? 'Re-analyzing…' : 'Re-run AI tagging'}</ThemedText>
                 </Pressable>
               )}
