@@ -1,6 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -8,9 +8,11 @@ import { TagEditor } from '@/components/tag-editor';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useBonusAnalysisAd } from '@/hooks/use-bonus-analysis-ad';
 import { useTheme } from '@/hooks/use-theme';
 import { createItem } from '@/lib/db';
 import { suggestTagsForPhoto } from '@/lib/groq';
+import { FREE_DAILY_LIMIT, getUsageToday, grantBonusAnalysis, recordAnalysisUsed, UsageToday } from '@/lib/usage';
 
 export default function AddItemScreen() {
   const router = useRouter();
@@ -32,7 +34,29 @@ export default function AddItemScreen() {
   const [notes, setNotes] = useState('');
   const [tags, setTags] = useState<string[]>([]);
 
+  const [quota, setQuota] = useState<UsageToday | null>(null);
+  useEffect(() => {
+    getUsageToday().then(setQuota);
+  }, []);
+
+  const handleRewardEarned = useCallback(async () => {
+    const updated = await grantBonusAnalysis();
+    setQuota(updated);
+    if (photoBase64) await analyze(photoBase64);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photoBase64]);
+  const bonusAd = useBonusAnalysisAd(handleRewardEarned);
+
   async function analyze(base64: string) {
+    // Re-check against the database rather than the `quota` state closure, so this
+    // stays correct even when called right after a bonus was just granted.
+    const current = await getUsageToday();
+    if (current.remaining <= 0) {
+      setQuota(current);
+      Alert.alert('今日次數已用完', '看一則廣告可以再多辨識 1 次。');
+      return;
+    }
+
     setAnalyzing(true);
     try {
       const suggestion = await suggestTagsForPhoto(base64);
@@ -42,6 +66,7 @@ export default function AddItemScreen() {
       setCategory(suggestion.category ?? '');
       setColor(suggestion.color ?? '');
       setTags(suggestion.tags);
+      setQuota(await recordAnalysisUsed());
     } catch (error) {
       Alert.alert('AI tagging failed', error instanceof Error ? error.message : String(error));
     } finally {
@@ -114,7 +139,7 @@ export default function AddItemScreen() {
               <Pressable style={[styles.button, { backgroundColor: theme.backgroundElement }]} onPress={() => pickFrom('library')}>
                 <ThemedText>Choose from Library</ThemedText>
               </Pressable>
-              {photoBase64 && (
+              {photoBase64 && quota && quota.remaining > 0 && (
                 <Pressable
                   style={[styles.button, { backgroundColor: theme.backgroundElement }]}
                   disabled={analyzing}
@@ -124,6 +149,23 @@ export default function AddItemScreen() {
               )}
             </View>
           </View>
+
+          {quota && (
+            <ThemedText type="small" themeColor="textSecondary">
+              {quota.remaining > 0
+                ? `今日還可 AI 辨識 ${quota.remaining} 次（每日免費 ${FREE_DAILY_LIMIT} 次）`
+                : `今日 ${FREE_DAILY_LIMIT} 次免費 AI 辨識已用完`}
+            </ThemedText>
+          )}
+
+          {quota && quota.remaining === 0 && (
+            <Pressable
+              style={[styles.button, { backgroundColor: theme.backgroundElement }, !bonusAd.isReady && styles.buttonDisabled]}
+              disabled={!bonusAd.isReady}
+              onPress={bonusAd.show}>
+              <ThemedText>{bonusAd.isReady ? '看廣告，多辨識 1 次' : '廣告準備中…'}</ThemedText>
+            </Pressable>
+          )}
 
           {analyzing && (
             <View style={styles.analyzingRow}>
@@ -227,6 +269,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.one,
+  },
+  buttonDisabled: {
+    opacity: 0.5,
   },
   analyzingRow: {
     flexDirection: 'row',
