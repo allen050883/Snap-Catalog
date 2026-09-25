@@ -8,11 +8,10 @@ A native app for cataloging your collectibles (Rilakkuma, Sanrio, blind-box figu
 - **expo-sqlite** — local, on-device database, no backend required
 - **expo-image-picker** — camera / photo library
 - **Groq API** (vision model) — suggests name / character / series / category / color / tags from a photo
-- **react-native-google-mobile-ads** — rewarded ads that unlock extra daily AI-tagging uses (see below)
 
 ### Web support is paused
 
-This app briefly also targeted the web (`react-native-web`) as a static site. That's on hold, and **`expo export --platform web` currently fails to bundle** — `react-native-google-mobile-ads` is native-only and has no web implementation. If you pick the website back up later, the fix is to stub out the ads hook on web (a `use-bonus-analysis-ad.web.ts` that always reports "no bonus available") rather than importing the ads package there at all.
+This app briefly also targeted the web (`react-native-web`) as a static site. That's on hold for now.
 
 ### Data is local to the device, not synced
 
@@ -23,25 +22,8 @@ There's no server — everything lives in that phone's local SQLite database. Th
 ```bash
 npm install
 cp .env.example .env   # then paste your Groq API key into .env
+npx expo start          # scan the QR code with Expo Go
 ```
-
-### Testing on a device: dev client, not Expo Go
-
-Rewarded ads are a native module, so **Expo Go can no longer run this app**. Instead, build a dev client once — free on Expo's build service:
-
-```bash
-npx eas build --profile development --platform android   # or ios
-```
-
-The first `eas build` will prompt you to log in (`eas login`, free Expo account) and link the project (`eas init`) if you haven't already.
-
-Install the resulting build on your phone, then for every day-to-day run:
-
-```bash
-npx expo start --dev-client
-```
-
-This still gives you fast refresh / hot reload like Expo Go did — you only need to rebuild the dev client when a native dependency changes (e.g. you add another native SDK).
 
 ### Groq API key
 
@@ -61,13 +43,19 @@ Defaults to `meta-llama/llama-4-scout-17b-16e-instruct` — Groq's fast, low-cos
 4. Review/edit any field and the tags, then save. Everything — including the photo, stored as a base64 data URI — is kept locally in SQLite.
 5. Use the search bar on the home screen to check by name, character, series, color, or tag whether you already own something before buying it again.
 
-## Daily AI quota + rewarded ads
+## Daily AI quota
 
-AI tagging (the Groq call) is rate-limited to keep API usage predictable: **5 free uses per calendar day** (device-local time, resets at midnight). Once that's used up, the Add screen offers "看廣告，多辨識 1 次" — watching one rewarded ad grants exactly one more use for that day. Manually filling in fields and saving is never gated; only the AI call is.
+AI tagging (the Groq call) is rate-limited to keep API usage predictable: **5 free uses per calendar day** (device-local time, resets at midnight). Once that's used up, you can still fill in every field and save manually — only the AI call itself is gated. Tracked in `src/lib/usage.ts` (a SQLite table with `{ used, bonus }` per day).
 
-- `src/lib/usage.ts` — tracks `{ used, bonus }` per day in a SQLite table; `remaining = 5 + bonus - used`
-- `src/hooks/use-bonus-analysis-ad.ts` — wraps `react-native-google-mobile-ads`'s `useRewardedAd` hook; on earning the reward, grants a bonus use and re-runs AI tagging on the pending photo automatically
-- `app.json` and the ad unit ID in `use-bonus-analysis-ad.ts` currently use **Google's official test IDs** — they always serve a placeholder ad and never earn real revenue. Before shipping to real users: create an AdMob account, register the app, create a real rewarded ad unit, and swap both IDs in
+**Paused for now: rewarded ads to earn extra uses.** There was a working version of this — watching a rewarded ad granted one bonus use for the day — built with `react-native-google-mobile-ads`. It's commented out (not deleted) in `src/app/_layout.tsx` and `src/app/add.tsx`, and `usage.ts`'s `bonus` field/`grantBonusAnalysis()` are still there ready to be wired back up. Banner ads (a persistent on-screen ad strip) were discussed but never built.
+
+To restore the ad-bonus flow later:
+1. `npm install expo-dev-client@~57.0.19 react-native-google-mobile-ads@^17.2.0` (pin to whatever's current for your Expo SDK version at the time)
+2. Re-add the `react-native-google-mobile-ads` plugin entry to `app.json`'s `plugins` (Google's test App IDs: `androidAppId: "ca-app-pub-3940256099942544~3347511713"`, `iosAppId: "ca-app-pub-3940256099942544~1458002511"`)
+3. Uncomment the blocks in `_layout.tsx` and `add.tsx`
+4. Since the ads SDK is a native module, Expo Go can't run the app anymore at that point — see the dev-client workflow: `npx eas build --profile development` once, then `npx expo start --dev-client` day to day (you'll need to add back an `eas.json` with a `development` build profile)
+
+Before shipping the ad-bonus feature to real users: create an AdMob account, register the app, create a real rewarded ad unit, and swap the test IDs for real ones (both in `app.json` and in `use-bonus-analysis-ad.ts`'s `BONUS_AD_UNIT_ID`).
 
 ## Project structure
 
@@ -75,9 +63,8 @@ AI tagging (the Groq call) is rate-limited to keep API usage predictable: **5 fr
 src/
   app/                          # expo-router screens (index = list/search, add = capture + AI tag, item/[id] = view/edit/delete)
   components/                   # themed UI primitives + tag chip/editor
-  hooks/use-bonus-analysis-ad.ts # rewarded-ad hook for the daily quota bonus
+  hooks/use-bonus-analysis-ad.ts # rewarded-ad hook for the daily quota bonus (currently unused, see above)
   lib/db.ts                     # SQLite schema + CRUD for items
   lib/usage.ts                  # daily AI-tagging quota tracking
   lib/groq.ts                   # Groq vision API call
-eas.json                        # EAS Build profiles (needed for `eas build --profile development`)
 ```

@@ -1,6 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -8,11 +8,15 @@ import { TagEditor } from '@/components/tag-editor';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { useBonusAnalysisAd } from '@/hooks/use-bonus-analysis-ad';
+// Paused for now — rewarded-ad bonus quota. Re-enable by uncommenting this import,
+// the `handleRewardEarned`/`bonusAd` block below, and the ad-gate button in the JSX,
+// plus reinstalling react-native-google-mobile-ads + expo-dev-client and restoring
+// the plugin entry in app.json. See README's "Daily AI quota + rewarded ads" section.
+// import { useBonusAnalysisAd } from '@/hooks/use-bonus-analysis-ad';
 import { useTheme } from '@/hooks/use-theme';
 import { createItem } from '@/lib/db';
 import { suggestTagsForPhoto } from '@/lib/groq';
-import { FREE_DAILY_LIMIT, getUsageToday, grantBonusAnalysis, recordAnalysisUsed, UsageToday } from '@/lib/usage';
+import { FREE_DAILY_LIMIT, getUsageToday, recordAnalysisUsed, UsageToday } from '@/lib/usage';
 
 export default function AddItemScreen() {
   const router = useRouter();
@@ -39,21 +43,21 @@ export default function AddItemScreen() {
     getUsageToday().then(setQuota);
   }, []);
 
-  const handleRewardEarned = useCallback(async () => {
-    const updated = await grantBonusAnalysis();
-    setQuota(updated);
-    if (photoBase64) await analyze(photoBase64);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [photoBase64]);
-  const bonusAd = useBonusAnalysisAd(handleRewardEarned);
+  // Paused — see the import comment above for how to restore the ad-bonus flow.
+  // const handleRewardEarned = useCallback(async () => {
+  //   const updated = await grantBonusAnalysis();
+  //   setQuota(updated);
+  //   if (photoBase64) await analyze(photoBase64);
+  // }, [photoBase64]);
+  // const bonusAd = useBonusAnalysisAd(handleRewardEarned);
 
   async function analyze(base64: string) {
     // Re-check against the database rather than the `quota` state closure, so this
-    // stays correct even when called right after a bonus was just granted.
+    // stays correct even if called right after quota changed elsewhere.
     const current = await getUsageToday();
     if (current.remaining <= 0) {
       setQuota(current);
-      Alert.alert('今日次數已用完', '看一則廣告可以再多辨識 1 次。');
+      Alert.alert('今日次數已用完', `已達每日 ${FREE_DAILY_LIMIT} 次免費 AI 辨識上限，請明天再試。`);
       return;
     }
 
@@ -158,14 +162,15 @@ export default function AddItemScreen() {
             </ThemedText>
           )}
 
-          {quota && quota.remaining === 0 && (
+          {/* Paused — rewarded-ad bonus button. See the import comment near the top of this file. */}
+          {/* {quota && quota.remaining === 0 && (
             <Pressable
               style={[styles.button, { backgroundColor: theme.backgroundElement }, !bonusAd.isReady && styles.buttonDisabled]}
               disabled={!bonusAd.isReady}
               onPress={bonusAd.show}>
               <ThemedText>{bonusAd.isReady ? '看廣告，多辨識 1 次' : '廣告準備中…'}</ThemedText>
             </Pressable>
-          )}
+          )} */}
 
           {analyzing && (
             <View style={styles.analyzingRow}>
