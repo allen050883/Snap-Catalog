@@ -114,6 +114,16 @@ export default function ItemListScreen() {
   // FlatList can't change numColumns without remounting, hence the key below.
   const columns = width >= 900 ? 4 : width >= 600 ? 3 : 2;
 
+  // Cards are flex: 1 so they share a row evenly, which also means a partial last row
+  // stretches them — five items across four columns gave the fifth a full-width card
+  // taller than the viewport. Padding the data to a whole number of rows and
+  // rendering the extras as empty space keeps every card the same size.
+  const rows = useMemo(() => {
+    const remainder = visibleItems.length % columns;
+    if (visibleItems.length === 0 || remainder === 0) return visibleItems;
+    return [...visibleItems, ...Array<null>(columns - remainder).fill(null)];
+  }, [visibleItems, columns]);
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -162,9 +172,9 @@ export default function ItemListScreen() {
 
           <FlatList
             key={`cols-${columns}`}
-            data={visibleItems}
+            data={rows}
             numColumns={columns}
-            keyExtractor={(item) => item.id}
+            keyExtractor={(item, index) => item?.id ?? `filler-${index}`}
             contentContainerStyle={styles.list}
             columnWrapperStyle={styles.column}
             ListEmptyComponent={
@@ -190,13 +200,17 @@ export default function ItemListScreen() {
                 />
               )
             }
-            renderItem={({ item }) => (
-              <ItemCard
-                item={item}
-                themeNames={item.themeIds.map(themeName).filter(Boolean)}
-                onPress={() => router.push(`/item/${item.id}`)}
-              />
-            )}
+            renderItem={({ item }) =>
+              item ? (
+                <ItemCard
+                  item={item}
+                  themeNames={item.themeIds.map(themeName).filter(Boolean)}
+                  onPress={() => router.push(`/item/${item.id}`)}
+                />
+              ) : (
+                <View style={styles.filler} />
+              )
+            }
           />
 
           {__DEV__ && items.length > 0 && (
@@ -254,6 +268,7 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.six + Spacing.four,
   },
   column: { gap: Spacing.three },
+  filler: { flex: 1 },
   devReset: { alignItems: 'center', paddingBottom: Spacing.two },
   fab: {
     position: 'absolute',
