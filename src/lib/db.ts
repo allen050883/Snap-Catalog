@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 
 import { auth, db } from '@/lib/firebase';
+import { nameSimilarity } from '@/lib/similarity';
 
 export type Item = {
   id: string;
@@ -177,10 +178,19 @@ export async function getItem(id: string): Promise<ItemWithTags | null> {
 
 /** The fields a duplicate check compares — everything else is allowed to differ. */
 export type DuplicateKey = {
+  name: string;
   themeIds: string[];
   series: string | null;
   type: string | null;
 };
+
+/**
+ * How alike two names must be to count as the same piece when neither side names a
+ * series. Chosen from real pairs: the closest miss ("拉拉熊 行李箱" vs "拉拉熊 旅行箱",
+ * "凱蒂貓 馬克杯" vs "凱蒂貓 水壺") tops out at 0.60, while the nearest genuine match
+ * ("繪畫系列" vs "繪畫主題" of the same suitcase) starts at 0.67.
+ */
+const NAME_SIMILARITY_THRESHOLD = 0.65;
 
 function normalize(value: string | null): string {
   return (value ?? '').toLowerCase().replace(/\s+/g, '');
@@ -201,12 +211,30 @@ function normalize(value: string | null): string {
  */
 export function findPossibleDuplicates(items: ItemWithTags[], draft: DuplicateKey): ItemWithTags[] {
   if (draft.themeIds.length === 0 || !draft.type) return [];
-  return items.filter(
-    (item) =>
-      item.type === draft.type &&
-      item.themeIds.some((id) => draft.themeIds.includes(id)) &&
-      normalize(item.series) === normalize(draft.series),
-  );
+  const draftSeries = normalize(draft.series);
+
+  return items.filter((item) => {
+    if (item.type !== draft.type) return false;
+    if (!item.themeIds.some((id) => draft.themeIds.includes(id))) return false;
+
+    const itemSeries = normalize(item.series);
+    if (itemSeries !== draftSeries) return false;
+
+    // Matching series is strong evidence, but two blanks are not: without this,
+    // every 拉拉熊 suitcase with no series entered would flag every other one. When
+    // neither side names a series the names have to carry the match instead.
+    if (draftSeries === '') {
+      return nameSimilarity(item.name, draft.name) >= NAME_SIMILARITY_THRESHOLD;
+    }
+    return true;
+  });
+}
+
+/** Moves an item between owned/wished, for when a wished-for piece finally turns up. */
+export async function setItemStatus(id: string, status: string): Promise<void> {
+  const batch = writeBatch(db);
+  batch.update(doc(itemsCollection(), id), { status });
+  await batch.commit();
 }
 
 /** Adds to an existing item's count, for when the "duplicate" is a second purchase. */

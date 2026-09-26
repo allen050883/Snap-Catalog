@@ -30,6 +30,7 @@ import {
   incrementQuantity,
   type ItemWithTags,
   listItems,
+  setItemStatus,
 } from '@/lib/db';
 import { createTheme, findThemeByName, listThemes, type Theme } from '@/lib/themes';
 import { suggestTagsForPhoto } from '@/lib/groq';
@@ -214,21 +215,24 @@ export default function AddItemScreen() {
   // Recomputed from the three identifying fields, so correcting the type or picking
   // a different theme re-runs the check — the AI's first guess is often what a real
   // duplicate hinges on.
-  const duplicate = useMemo(() => {
-    if (duplicateDismissed) return null;
-    const matches = findPossibleDuplicates(catalog, { themeIds, series: series || null, type: type || null });
-    return matches[0] ?? null;
-  }, [catalog, themeIds, series, type, duplicateDismissed]);
+  const duplicates = useMemo(() => {
+    if (duplicateDismissed) return [];
+    return findPossibleDuplicates(catalog, {
+      name,
+      themeIds,
+      series: series || null,
+      type: type || null,
+    });
+  }, [catalog, name, themeIds, series, type, duplicateDismissed]);
 
-  async function handleIncrementExisting() {
-    if (!duplicate) return;
+  async function resolveDuplicate(action: () => Promise<void>, failure: string) {
     setSaving(true);
     setError(null);
     try {
-      await incrementQuantity(duplicate.id);
+      await action();
       router.back();
     } catch (err) {
-      setError(`更新數量失敗：${err instanceof Error ? err.message : String(err)}`);
+      setError(`${failure}：${err instanceof Error ? err.message : String(err)}`);
       setSaving(false);
     }
   }
@@ -242,16 +246,19 @@ export default function AddItemScreen() {
           <ScrollView contentContainerStyle={styles.scroll}>
             {error && <InlineBanner tone="error" message={error} onDismiss={() => setError(null)} />}
 
-            {duplicate && (
-              <DuplicateCompare
-                draft={{ name, thumbnail: photo?.thumbnail ?? null, size, color }}
-                existing={duplicate}
-                themeNames={themes.filter((th) => themeIds.includes(th.id)).map((th) => th.name)}
-                onKeepAdding={() => setDuplicateDismissed(true)}
-                onDiscard={() => router.back()}
-                onIncrement={handleIncrementExisting}
-              />
-            )}
+            <DuplicateCompare
+              draft={{ name, thumbnail: photo?.thumbnail ?? null, size, color }}
+              matches={duplicates}
+              themeNamesFor={(item) =>
+                item.themeIds
+                  .map((id) => themes.find((th) => th.id === id)?.name)
+                  .filter((label): label is string => Boolean(label))
+              }
+              onKeepAdding={() => setDuplicateDismissed(true)}
+              onDiscard={() => router.back()}
+              onIncrement={(id) => resolveDuplicate(() => incrementQuantity(id), '更新數量失敗')}
+              onMarkOwned={(id) => resolveDuplicate(() => setItemStatus(id, 'owned'), '更新狀態失敗')}
+            />
 
             <Section title="照片" hint="先拍照辨識，再確認收藏資訊">
               <View style={styles.photoRow}>
