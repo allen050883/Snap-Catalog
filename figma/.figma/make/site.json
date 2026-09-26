@@ -1,0 +1,10 @@
+{
+  "description": "Easily catalog and manage your collectibles with AI-powered photo recognition, manual adjustments, and seamless cross-device synchronization.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

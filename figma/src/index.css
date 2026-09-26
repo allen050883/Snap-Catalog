@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+:root {
+  --background: #fdfbf7;
+  --background-element: #f5f0e8;
+  --background-selected: #e9e1d3;
+  --text: #2e2a24;
+  --text-secondary: #7a7064;
+  --accent: #d98e7a;
+  --danger: #b3453a;
+}
+
+@theme inline {
+  --color-page: var(--background);
+  --color-element: var(--background-element);
+  --color-selected: var(--background-selected);
+  --color-ink: var(--text);
+  --color-muted: var(--text-secondary);
+  --color-accent: var(--accent);
+  --color-danger: var(--danger);
+  --max-width-catalog: 50rem;
+  --text-title: 3rem;
+  --text-title--line-height: 3.25rem;
+  --text-title--font-weight: 600;
+  --text-subtitle: 2rem;
+  --text-subtitle--line-height: 2.75rem;
+  --text-subtitle--font-weight: 600;
+}
+
+:root {
+  font-family:
+    "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", ui-sans-serif,
+    system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
