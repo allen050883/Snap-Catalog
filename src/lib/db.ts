@@ -1,7 +1,23 @@
-import * as SQLite from 'expo-sqlite';
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  DocumentData,
+  getDoc,
+  getDocs,
+  orderBy,
+  query,
+  QueryDocumentSnapshot,
+  serverTimestamp,
+  Timestamp,
+  updateDoc,
+} from 'firebase/firestore';
+
+import { auth, db } from '@/lib/firebase';
 
 export type Item = {
-  id: number;
+  id: string;
   name: string;
   character: string | null;
   series: string | null;
@@ -13,145 +29,68 @@ export type Item = {
 };
 
 export type ItemInput = Omit<Item, 'id' | 'createdAt'>;
-
-let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
-
-function getDb() {
-  if (!dbPromise) {
-    dbPromise = SQLite.openDatabaseAsync('snap-catalog.db').then(async (db) => {
-      await db.execAsync(`
-        PRAGMA journal_mode = WAL;
-
-        CREATE TABLE IF NOT EXISTS items (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          character TEXT,
-          series TEXT,
-          category TEXT,
-          color TEXT,
-          notes TEXT,
-          photoUri TEXT,
-          createdAt INTEGER NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS tags (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL UNIQUE COLLATE NOCASE
-        );
-
-        CREATE TABLE IF NOT EXISTS item_tags (
-          itemId INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-          tagId INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-          PRIMARY KEY (itemId, tagId)
-        );
-      `);
-      return db;
-    });
-  }
-  return dbPromise;
-}
-
-export async function createItem(input: ItemInput, tagNames: string[]): Promise<number> {
-  const db = await getDb();
-  const result = await db.runAsync(
-    `INSERT INTO items (name, character, series, category, color, notes, photoUri, createdAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      input.name,
-      input.character,
-      input.series,
-      input.category,
-      input.color,
-      input.notes,
-      input.photoUri,
-      Date.now(),
-    ],
-  );
-  const itemId = result.lastInsertRowId;
-  await setItemTags(itemId, tagNames);
-  return itemId;
-}
-
-export async function updateItem(id: number, input: ItemInput, tagNames: string[]): Promise<void> {
-  const db = await getDb();
-  await db.runAsync(
-    `UPDATE items SET name = ?, character = ?, series = ?, category = ?, color = ?, notes = ?, photoUri = ?
-     WHERE id = ?`,
-    [input.name, input.character, input.series, input.category, input.color, input.notes, input.photoUri, id],
-  );
-  await setItemTags(id, tagNames);
-}
-
-export async function deleteItem(id: number): Promise<void> {
-  const db = await getDb();
-  await db.runAsync(`DELETE FROM items WHERE id = ?`, [id]);
-}
-
-async function setItemTags(itemId: number, tagNames: string[]) {
-  const db = await getDb();
-  await db.runAsync(`DELETE FROM item_tags WHERE itemId = ?`, [itemId]);
-
-  const uniqueNames = [...new Set(tagNames.map((t) => t.trim()).filter(Boolean))];
-  for (const name of uniqueNames) {
-    await db.runAsync(`INSERT OR IGNORE INTO tags (name) VALUES (?)`, [name]);
-    const tag = await db.getFirstAsync<{ id: number }>(`SELECT id FROM tags WHERE name = ? COLLATE NOCASE`, [name]);
-    if (tag) {
-      await db.runAsync(`INSERT OR IGNORE INTO item_tags (itemId, tagId) VALUES (?, ?)`, [itemId, tag.id]);
-    }
-  }
-}
-
 export type ItemWithTags = Item & { tags: string[] };
 
-async function attachTags(db: SQLite.SQLiteDatabase, items: Item[]): Promise<ItemWithTags[]> {
-  if (items.length === 0) return [];
-  const ids = items.map((i) => i.id);
-  const placeholders = ids.map(() => '?').join(',');
-  const rows = await db.getAllAsync<{ itemId: number; name: string }>(
-    `SELECT item_tags.itemId as itemId, tags.name as name
-     FROM item_tags JOIN tags ON tags.id = item_tags.tagId
-     WHERE item_tags.itemId IN (${placeholders})`,
-    ids,
-  );
-  const tagsByItem = new Map<number, string[]>();
-  for (const row of rows) {
-    const list = tagsByItem.get(row.itemId) ?? [];
-    list.push(row.name);
-    tagsByItem.set(row.itemId, list);
-  }
-  return items.map((item) => ({ ...item, tags: tagsByItem.get(item.id) ?? [] }));
+function itemsCollection() {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Not signed in');
+  return collection(db, 'users', uid, 'items');
+}
+
+function fromDoc(snap: QueryDocumentSnapshot<DocumentData>): ItemWithTags {
+  const data = snap.data();
+  const createdAt = data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now();
+  return {
+    id: snap.id,
+    name: data.name,
+    character: data.character ?? null,
+    series: data.series ?? null,
+    category: data.category ?? null,
+    color: data.color ?? null,
+    notes: data.notes ?? null,
+    photoUri: data.photoUri ?? null,
+    tags: Array.isArray(data.tags) ? data.tags : [],
+    createdAt,
+  };
+}
+
+function uniqueTags(tags: string[]): string[] {
+  return [...new Set(tags.map((t) => t.trim()).filter(Boolean))];
+}
+
+export async function createItem(input: ItemInput, tags: string[]): Promise<string> {
+  const docRef = await addDoc(itemsCollection(), {
+    ...input,
+    tags: uniqueTags(tags),
+    createdAt: serverTimestamp(),
+  });
+  return docRef.id;
+}
+
+export async function updateItem(id: string, input: ItemInput, tags: string[]): Promise<void> {
+  await updateDoc(doc(itemsCollection(), id), { ...input, tags: uniqueTags(tags) });
+}
+
+export async function deleteItem(id: string): Promise<void> {
+  await deleteDoc(doc(itemsCollection(), id));
 }
 
 export async function listItems(search?: string): Promise<ItemWithTags[]> {
-  const db = await getDb();
-  let items: Item[];
-  if (search && search.trim()) {
-    const like = `%${search.trim()}%`;
-    items = await db.getAllAsync<Item>(
-      `SELECT DISTINCT items.* FROM items
-       LEFT JOIN item_tags ON item_tags.itemId = items.id
-       LEFT JOIN tags ON tags.id = item_tags.tagId
-       WHERE items.name LIKE ? OR items.character LIKE ? OR items.series LIKE ?
-          OR items.category LIKE ? OR items.color LIKE ? OR tags.name LIKE ?
-       ORDER BY items.createdAt DESC`,
-      [like, like, like, like, like, like],
-    );
-  } else {
-    items = await db.getAllAsync<Item>(`SELECT * FROM items ORDER BY createdAt DESC`);
-  }
-  return attachTags(db, items);
+  const snap = await getDocs(query(itemsCollection(), orderBy('createdAt', 'desc')));
+  const items = snap.docs.map(fromDoc);
+
+  const needle = search?.trim().toLowerCase();
+  if (!needle) return items;
+
+  return items.filter((item) =>
+    [item.name, item.character, item.series, item.category, item.color, ...item.tags]
+      .filter((field): field is string => Boolean(field))
+      .some((field) => field.toLowerCase().includes(needle)),
+  );
 }
 
-export async function getItem(id: number): Promise<ItemWithTags | null> {
-  const db = await getDb();
-  const item = await db.getFirstAsync<Item>(`SELECT * FROM items WHERE id = ?`, [id]);
-  if (!item) return null;
-  const [withTags] = await attachTags(db, [item]);
-  return withTags;
-}
-
-export async function listAllTags(): Promise<string[]> {
-  const db = await getDb();
-  const rows = await db.getAllAsync<{ name: string }>(`SELECT name FROM tags ORDER BY name COLLATE NOCASE`);
-  return rows.map((r) => r.name);
+export async function getItem(id: string): Promise<ItemWithTags | null> {
+  const snap = await getDoc(doc(itemsCollection(), id));
+  if (!snap.exists()) return null;
+  return fromDoc(snap as QueryDocumentSnapshot<DocumentData>);
 }

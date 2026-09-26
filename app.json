@@ -8,6 +8,7 @@
     "scheme": "snapcatalog",
     "userInterfaceStyle": "automatic",
     "ios": {
+      "bundleIdentifier": "com.allen050883.snapcatalog",
       "icon": "./assets/expo.icon",
       "infoPlist": {
         "NSCameraUsageDescription": "Snap Catalog needs camera access to photograph your collectibles.",
@@ -15,6 +16,7 @@
       }
     },
     "android": {
+      "package": "com.allen050883.snapcatalog",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

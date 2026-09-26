@@ -1,4 +1,5 @@
 import { useFocusEffect, useRouter } from 'expo-router';
+import { signOut } from 'firebase/auth';
 import { useCallback, useState } from 'react';
 import { FlatList, Image, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7,12 +8,15 @@ import { TagChip } from '@/components/tag-chip';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useAuthUser } from '@/hooks/use-auth-user';
 import { useTheme } from '@/hooks/use-theme';
+import { auth } from '@/lib/firebase';
 import { ItemWithTags, listItems } from '@/lib/db';
 
 export default function ItemListScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const { user } = useAuthUser();
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<ItemWithTags[]>([]);
 
@@ -30,6 +34,17 @@ export default function ItemListScreen() {
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+        <View style={styles.accountRow}>
+          <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.accountEmail}>
+            {user?.email ?? user?.displayName}
+          </ThemedText>
+          <Pressable onPress={() => signOut(auth)}>
+            <ThemedText type="small" themeColor="textSecondary">
+              登出
+            </ThemedText>
+          </Pressable>
+        </View>
+
         <TextInput
           value={query}
           onChangeText={(text) => {
@@ -93,9 +108,20 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  search: {
+  accountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginHorizontal: Spacing.three,
     marginTop: Spacing.three,
+    gap: Spacing.two,
+  },
+  accountEmail: {
+    flex: 1,
+  },
+  search: {
+    marginHorizontal: Spacing.three,
+    marginTop: Spacing.two,
     borderRadius: Spacing.two,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,

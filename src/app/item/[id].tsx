@@ -26,7 +26,8 @@ export default function ItemDetailScreen() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    getItem(Number(id)).then((loaded) => {
+    if (!id) return;
+    getItem(id).then((loaded) => {
       if (!loaded) return;
       setItem(loaded);
       setName(loaded.name);

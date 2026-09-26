@@ -14,6 +14,7 @@ import { Spacing } from '@/constants/theme';
 // the plugin entry in app.json. See README's "Daily AI quota + rewarded ads" section.
 // import { useBonusAnalysisAd } from '@/hooks/use-bonus-analysis-ad';
 import { useTheme } from '@/hooks/use-theme';
+import { compressPhotoToBase64 } from '@/lib/compress-photo';
 import { createItem } from '@/lib/db';
 import { suggestTagsForPhoto } from '@/lib/groq';
 import { FREE_DAILY_LIMIT, getUsageToday, recordAnalysisUsed, UsageToday } from '@/lib/usage';
@@ -22,11 +23,13 @@ export default function AddItemScreen() {
   const router = useRouter();
   const theme = useTheme();
 
-  // Kept as base64 (not a file:// URI) so this works identically on native and web:
-  // expo-image-picker's base64 option is cross-platform, whereas the file URIs it
-  // returns are not (and expo-file-system has no document directory on web).
+  // Kept as base64 (not a file:// URI) so this works identically on native and web,
+  // and so it can be stored directly on the Firestore item document (see lib/db.ts) —
+  // already resized/compressed by compressPhotoToBase64 to fit Firestore's 1 MiB
+  // per-document limit.
   const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const photoUri = photoBase64 ? `data:image/jpeg;base64,${photoBase64}` : null;
+  const [preparingPhoto, setPreparingPhoto] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -88,15 +91,23 @@ export default function AddItemScreen() {
       return;
     }
 
-    const options: ImagePicker.ImagePickerOptions = { quality: 0.7, allowsEditing: true, base64: true };
+    const options: ImagePicker.ImagePickerOptions = { quality: 0.9, allowsEditing: true };
     const result =
       source === 'camera' ? await ImagePicker.launchCameraAsync(options) : await ImagePicker.launchImageLibraryAsync(options);
 
     const asset = result.assets?.[0];
-    if (result.canceled || !asset?.base64) return;
+    if (result.canceled || !asset) return;
 
-    setPhotoBase64(asset.base64);
-    await analyze(asset.base64);
+    setPreparingPhoto(true);
+    try {
+      const base64 = await compressPhotoToBase64(asset.uri);
+      setPhotoBase64(base64);
+      await analyze(base64);
+    } catch (error) {
+      Alert.alert('Could not process photo', error instanceof Error ? error.message : String(error));
+    } finally {
+      setPreparingPhoto(false);
+    }
   }
 
   async function handleSave() {
@@ -137,10 +148,16 @@ export default function AddItemScreen() {
               </View>
             )}
             <View style={styles.photoButtons}>
-              <Pressable style={[styles.button, { backgroundColor: theme.backgroundElement }]} onPress={() => pickFrom('camera')}>
-                <ThemedText>Take Photo</ThemedText>
+              <Pressable
+                style={[styles.button, { backgroundColor: theme.backgroundElement }]}
+                disabled={preparingPhoto}
+                onPress={() => pickFrom('camera')}>
+                <ThemedText>{preparingPhoto ? 'Preparing photo…' : 'Take Photo'}</ThemedText>
               </Pressable>
-              <Pressable style={[styles.button, { backgroundColor: theme.backgroundElement }]} onPress={() => pickFrom('library')}>
+              <Pressable
+                style={[styles.button, { backgroundColor: theme.backgroundElement }]}
+                disabled={preparingPhoto}
+                onPress={() => pickFrom('library')}>
                 <ThemedText>Choose from Library</ThemedText>
               </Pressable>
               {photoBase64 && quota && quota.remaining > 0 && (
