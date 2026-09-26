@@ -14,17 +14,26 @@ WebBrowser.maybeCompleteAuthSession();
 // iOS just needs the bundle identifier) and fill them in below.
 const WEB_CLIENT_ID = '855837453649-77o096k4niirfvr3h7skeuvo4n4lb29k.apps.googleusercontent.com';
 const ANDROID_CLIENT_ID = ''; // TODO: paste your Android OAuth client ID here
-const IOS_CLIENT_ID = ''; // TODO: paste your iOS OAuth client ID here
+const IOS_CLIENT_ID = '855837453649-d05ab8k4kf1fe4s9ad3b4aflicembt08.apps.googleusercontent.com';
 
 export function useGoogleSignIn() {
   const [signingIn, setSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    webClientId: WEB_CLIENT_ID,
-    androidClientId: ANDROID_CLIENT_ID || undefined,
-    iosClientId: IOS_CLIENT_ID || undefined,
-  });
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest(
+    {
+      webClientId: WEB_CLIENT_ID,
+      androidClientId: ANDROID_CLIENT_ID || undefined,
+      iosClientId: IOS_CLIENT_ID || undefined,
+    },
+    // Google.useAuthRequest defaults the native redirect to
+    // `${bundleId}:/oauthredirect`, which isn't a URL scheme this app actually
+    // registers. app.json's top-level "scheme" (snapcatalog) IS registered (Expo
+    // wires it into Info.plist / the Android intent filter for us), so redirect
+    // there instead — otherwise the browser can't hand control back to the app
+    // after Google sign-in completes.
+    { native: 'snapcatalog:/oauthredirect' },
+  );
 
   useEffect(() => {
     if (response?.type !== 'success') return;

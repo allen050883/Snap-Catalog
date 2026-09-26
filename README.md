@@ -47,15 +47,15 @@ The Firebase project (`snap-catalog-a0c41`) and its web config are already wired
 - **Authentication → Sign-in method → Google** enabled
 - **Cloud Storage skipped on purpose** — Firebase now requires the paid Blaze plan (still free at low usage, but needs a credit card) to use Storage at all. Photos are instead resized/compressed (see `lib/compress-photo.ts`) and stored as a base64 string directly on the Firestore item document, which stays under Firestore's 1 MiB per-document limit.
 
-### Still needed: native OAuth client IDs
+### Native OAuth client IDs
 
-`src/hooks/use-google-sign-in.ts` has a **Web** OAuth client ID already filled in (works when running on web), but native platforms (Android/iOS, including a dev client) need their own:
+`src/hooks/use-google-sign-in.ts` has **Web** and **iOS** OAuth client IDs filled in already. **Android is still missing** — Google Sign-In will fail on an Android build until it's added:
 
-1. **Android**: get your dev-client build's SHA-1 fingerprint via `eas credentials` (select Android; it'll show or generate a keystore). In [Google Cloud Console](https://console.cloud.google.com) → APIs & Services → Credentials → Create Credentials → OAuth client ID → **Android** → package name `com.allen050883.snapcatalog` + that SHA-1.
-2. **iOS**: same Credentials page → Create Credentials → OAuth client ID → **iOS** → bundle ID `com.allen050883.snapcatalog` (no fingerprint needed).
-3. Paste both into `src/hooks/use-google-sign-in.ts`'s `ANDROID_CLIENT_ID` / `IOS_CLIENT_ID`.
+1. Get your dev-client build's SHA-1 fingerprint via `eas credentials` (select Android; it'll show or generate a keystore).
+2. In [Google Cloud Console](https://console.cloud.google.com/apis/credentials?project=snap-catalog-a0c41) (make sure the project selector shows `snap-catalog-a0c41` — it's easy to accidentally land in an unrelated default project) → Create Credentials → OAuth client ID → **Android** → package name `com.allen050883.snapcatalog` + that SHA-1.
+3. Paste the resulting client ID into `src/hooks/use-google-sign-in.ts`'s `ANDROID_CLIENT_ID`.
 
-Until these are filled in, Google Sign-In only works when running on web (`npx expo start --web`); it'll fail on a native build.
+Both native client IDs also needed a redirect URI fix: `expo-auth-session`'s Google provider defaults the native redirect to `${bundleId}:/oauthredirect`, but this app doesn't register that as a URL scheme — only `app.json`'s top-level `scheme` (`snapcatalog`) is registered. `useGoogleSignIn` passes an explicit `{ native: 'snapcatalog:/oauthredirect' }` redirect override to fix this; if Android sign-in still fails to return to the app after adding the client ID above, that's the first thing to check.
 
 ### Groq API key
 
