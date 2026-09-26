@@ -1,11 +1,12 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FormField } from '@/components/form-field';
 import { Icon } from '@/components/icon';
+import { DuplicateCompare } from '@/components/duplicate-compare';
 import { InlineBanner } from '@/components/inline-banner';
 import { ScreenContainer } from '@/components/screen-container';
 import { Section } from '@/components/section';
@@ -23,7 +24,13 @@ import { Spacing } from '@/constants/theme';
 // import { useBonusAnalysisAd } from '@/hooks/use-bonus-analysis-ad';
 import { useTheme } from '@/hooks/use-theme';
 import { type CompressedPhoto, compressPhoto } from '@/lib/compress-photo';
-import { createItem } from '@/lib/db';
+import {
+  createItem,
+  findPossibleDuplicates,
+  incrementQuantity,
+  type ItemWithTags,
+  listItems,
+} from '@/lib/db';
 import { createTheme, findThemeByName, listThemes, type Theme } from '@/lib/themes';
 import { suggestTagsForPhoto } from '@/lib/groq';
 import { FREE_DAILY_LIMIT, getUsageToday, recordAnalysisUsed, UsageToday } from '@/lib/usage';
@@ -72,6 +79,17 @@ export default function AddItemScreen() {
 
   /** Theme the AI named but that isn't in the catalog yet — offered, never auto-created. */
   const [suggestedTheme, setSuggestedTheme] = useState<string | null>(null);
+
+  // The whole catalog, kept for the duplicate check. It is only thumbnails and text
+  // now that full photos live elsewhere (lib/db.ts), so holding it is cheap.
+  const [catalog, setCatalog] = useState<ItemWithTags[]>([]);
+  useEffect(() => {
+    listItems()
+      .then(setCatalog)
+      .catch(() => setCatalog([]));
+  }, []);
+  /** Dismissed once the user says "not the same" — don't nag on every keystroke after. */
+  const [duplicateDismissed, setDuplicateDismissed] = useState(false);
 
   const [quota, setQuota] = useState<UsageToday | null>(null);
   useEffect(() => {
@@ -193,6 +211,28 @@ export default function AddItemScreen() {
     }
   }
 
+  // Recomputed from the three identifying fields, so correcting the type or picking
+  // a different theme re-runs the check — the AI's first guess is often what a real
+  // duplicate hinges on.
+  const duplicate = useMemo(() => {
+    if (duplicateDismissed) return null;
+    const matches = findPossibleDuplicates(catalog, { themeIds, series: series || null, type: type || null });
+    return matches[0] ?? null;
+  }, [catalog, themeIds, series, type, duplicateDismissed]);
+
+  async function handleIncrementExisting() {
+    if (!duplicate) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await incrementQuantity(duplicate.id);
+      router.back();
+    } catch (err) {
+      setError(`更新數量失敗：${err instanceof Error ? err.message : String(err)}`);
+      setSaving(false);
+    }
+  }
+
   const busy = preparingPhoto || analyzing;
 
   return (
@@ -201,6 +241,17 @@ export default function AddItemScreen() {
         <ScreenContainer>
           <ScrollView contentContainerStyle={styles.scroll}>
             {error && <InlineBanner tone="error" message={error} onDismiss={() => setError(null)} />}
+
+            {duplicate && (
+              <DuplicateCompare
+                draft={{ name, thumbnail: photo?.thumbnail ?? null, size, color }}
+                existing={duplicate}
+                themeNames={themes.filter((th) => themeIds.includes(th.id)).map((th) => th.name)}
+                onKeepAdding={() => setDuplicateDismissed(true)}
+                onDiscard={() => router.back()}
+                onIncrement={handleIncrementExisting}
+              />
+            )}
 
             <Section title="照片" hint="先拍照辨識，再確認收藏資訊">
               <View style={styles.photoRow}>

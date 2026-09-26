@@ -175,6 +175,52 @@ export async function getItem(id: string): Promise<ItemWithTags | null> {
   return fromDoc(snap as QueryDocumentSnapshot<DocumentData>);
 }
 
+/** The fields a duplicate check compares — everything else is allowed to differ. */
+export type DuplicateKey = {
+  themeIds: string[];
+  series: string | null;
+  type: string | null;
+};
+
+function normalize(value: string | null): string {
+  return (value ?? '').toLowerCase().replace(/\s+/g, '');
+}
+
+/**
+ * Items that look like the one being added.
+ *
+ * The rule is SPEC.md §5: share at least one theme, the same type, and the same
+ * series. That combination is what actually identifies a piece — two 拉拉熊 plushes
+ * from different series are different things, while the same series in another size
+ * is the duplicate people actually buy twice. Size and colour are deliberately *not*
+ * part of the test: they are the fields most likely to differ between the two, so
+ * the compare view shows them rather than filtering on them.
+ *
+ * An item with no theme or no type is never reported — there is too little to go on,
+ * and a false alarm on every untagged row would train the warning away.
+ */
+export function findPossibleDuplicates(items: ItemWithTags[], draft: DuplicateKey): ItemWithTags[] {
+  if (draft.themeIds.length === 0 || !draft.type) return [];
+  return items.filter(
+    (item) =>
+      item.type === draft.type &&
+      item.themeIds.some((id) => draft.themeIds.includes(id)) &&
+      normalize(item.series) === normalize(draft.series),
+  );
+}
+
+/** Adds to an existing item's count, for when the "duplicate" is a second purchase. */
+export async function incrementQuantity(id: string, by = 1): Promise<void> {
+  const ref = doc(itemsCollection(), id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('找不到這筆收藏');
+  const current = snap.data().quantity;
+  const quantity = (typeof current === 'number' && current > 0 ? current : 1) + by;
+  const batch = writeBatch(db);
+  batch.update(ref, { quantity });
+  await batch.commit();
+}
+
 /**
  * Fills the catalog with sample rows so the layout can be reviewed without spending
  * AI quota, and empties it again. Development only.
