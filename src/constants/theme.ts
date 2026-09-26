@@ -1,30 +1,41 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * The app's colors, spacing and type scale. There are many other ways to style a
+ * React Native app — [Nativewind](https://www.nativewind.dev/),
+ * [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app).
  */
 
 import '@/global.css';
 
 import { Platform } from 'react-native';
 
+// A single warm, fixed palette — the app deliberately does not follow the OS dark
+// mode. A catalog of collectibles is mostly photographs, and a cream ground flatters
+// them the way a gallery wall does, where pure black (the previous dark theme) both
+// fought the photos and made the plain layout look unfinished.
+//
+// Contrast ratios against `background`, all at or above WCAG AA's 4.5:1 for text:
+//   text          13.8:1
+//   textSecondary  4.7:1
+//   danger         5.3:1
+//   text on accent 5.5:1  (accent is a fill, never text — pair it with onAccent)
 export const Colors = {
-  light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
-  },
-  dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
-  },
+  background: '#FDFBF7',
+  /** Cards, inputs, section bodies — one step up from the page. */
+  backgroundElement: '#F5F0E8',
+  /** Pressed/secondary buttons and photo placeholders — two steps up. */
+  backgroundSelected: '#E9E1D3',
+  /** Item cards lift off the cream ground by going lighter, not darker. */
+  card: '#FFFFFF',
+  text: '#2E2A24',
+  textSecondary: '#7A7064',
+  /** Fills only: the FAB, primary buttons, selected chips. */
+  accent: '#D98E7A',
+  /** Text and icons sitting on top of `accent`. */
+  onAccent: '#2E2A24',
+  danger: '#B3453A',
 } as const;
 
-export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
+export type ThemeColor = keyof typeof Colors;
 
 export const Fonts = Platform.select({
   ios: {

@@ -40,7 +40,7 @@ export function TagEditor({ tags, onChange }: { tags: string[]; onChange: (tags:
         }}
         onSubmitEditing={commitDraft}
         onBlur={commitDraft}
-        placeholder="Add a tag and press enter"
+        placeholder="輸入標籤後按 Enter 或逗號新增"
         placeholderTextColor={theme.textSecondary}
         style={[styles.input, { color: theme.text, borderColor: theme.backgroundElement }]}
       />

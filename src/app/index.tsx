@@ -1,24 +1,37 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
-import { useCallback, useState } from 'react';
-import { FlatList, Image, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { FlatList, Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { TagChip } from '@/components/tag-chip';
+import { AppHeader } from '@/components/app-header';
+import { EmptyState } from '@/components/empty-state';
+import { FilterRow, type FilterOption } from '@/components/filter-row';
+import { Icon } from '@/components/icon';
+import { ItemCard } from '@/components/item-card';
+import { ScreenContainer } from '@/components/screen-container';
+import { StatusToggle } from '@/components/status-toggle';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { ITEM_TYPES } from '@/constants/item-types';
 import { Spacing } from '@/constants/theme';
 import { useAuthUser } from '@/hooks/use-auth-user';
 import { useTheme } from '@/hooks/use-theme';
+import { clearAllItems, ItemWithTags, listItems, seedMockItems } from '@/lib/db';
 import { auth } from '@/lib/firebase';
-import { ItemWithTags, listItems } from '@/lib/db';
 
 export default function ItemListScreen() {
   const router = useRouter();
   const theme = useTheme();
   const { user } = useAuthUser();
+  const { width } = useWindowDimensions();
+
   const [query, setQuery] = useState('');
+  const [status, setStatus] = useState<string>('owned');
+  const [themeFilter, setThemeFilter] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [items, setItems] = useState<ItemWithTags[]>([]);
+  const [seeding, setSeeding] = useState(false);
 
   const reload = useCallback((search: string) => {
     listItems(search).then(setItems);
@@ -31,133 +44,199 @@ export default function ItemListScreen() {
     }, [reload]),
   );
 
+  // Everything below is scoped to the current tab, so the filter rows and the count
+  // describe what you're actually looking at rather than the whole catalog.
+  const inStatus = useMemo(() => items.filter((item) => item.status === status), [items, status]);
+
+  // Only offer filters for values actually present, so no row advertises a bucket
+  // that would always come back empty.
+  const themeOptions: FilterOption[] = useMemo(() => {
+    const present = new Set(inStatus.flatMap((item) => item.themes));
+    return [...present].sort().map((name) => ({ value: name, label: name }));
+  }, [inStatus]);
+
+  const typeOptions: FilterOption[] = useMemo(() => {
+    const present = new Set(inStatus.map((item) => item.type).filter(Boolean));
+    return ITEM_TYPES.filter((t) => present.has(t.slug)).map((t) => ({ value: t.slug, label: t.label }));
+  }, [inStatus]);
+
+  const visibleItems = useMemo(
+    () =>
+      inStatus.filter(
+        (item) =>
+          (!themeFilter || item.themes.includes(themeFilter)) &&
+          (!typeFilter || item.type === typeFilter),
+      ),
+    [inStatus, themeFilter, typeFilter],
+  );
+
+  const filtering = Boolean(query || themeFilter || typeFilter);
+
+  function clearFilters() {
+    setQuery('');
+    setThemeFilter(null);
+    setTypeFilter(null);
+    reload('');
+  }
+
+  // Development only — both helpers are no-ops in a release build (see lib/db.ts).
+  async function handleSeed() {
+    setSeeding(true);
+    try {
+      await seedMockItems();
+      reload(query);
+    } finally {
+      setSeeding(false);
+    }
+  }
+
+  async function handleClearAll() {
+    setSeeding(true);
+    try {
+      await clearAllItems();
+      reload(query);
+    } finally {
+      setSeeding(false);
+    }
+  }
+
+  // FlatList can't change numColumns without remounting, hence the key below.
+  const columns = width >= 900 ? 4 : width >= 600 ? 3 : 2;
+
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-        <View style={styles.accountRow}>
-          <ThemedText type="small" themeColor="textSecondary" numberOfLines={1} style={styles.accountEmail}>
-            {user?.email ?? user?.displayName}
-          </ThemedText>
-          <Pressable onPress={() => signOut(auth)}>
-            <ThemedText type="small" themeColor="textSecondary">
-              登出
-            </ThemedText>
-          </Pressable>
-        </View>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        <AppHeader email={user?.email ?? user?.displayName ?? null} onSignOut={() => signOut(auth)} />
 
-        <TextInput
-          value={query}
-          onChangeText={(text) => {
-            setQuery(text);
-            reload(text);
-          }}
-          placeholder="Search name, character, series, tag…"
-          placeholderTextColor={theme.textSecondary}
-          style={[styles.search, { color: theme.text, backgroundColor: theme.backgroundElement }]}
-        />
-
-        <FlatList
-          data={items}
-          keyExtractor={(item) => String(item.id)}
-          contentContainerStyle={styles.list}
-          ListEmptyComponent={
-            <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
-              No items yet. Tap + to add your first one.
-            </ThemedText>
-          }
-          renderItem={({ item }) => (
-            <Pressable
-              style={[styles.card, { backgroundColor: theme.backgroundElement }]}
-              onPress={() => router.push(`/item/${item.id}`)}>
-              {item.photoUri ? (
-                <Image source={{ uri: item.photoUri }} style={styles.thumb} />
-              ) : (
-                <View style={[styles.thumb, styles.thumbPlaceholder, { backgroundColor: theme.backgroundSelected }]} />
-              )}
-              <View style={styles.cardBody}>
-                <ThemedText type="smallBold">{item.name}</ThemedText>
-                {(item.character || item.series) && (
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {[item.character, item.series].filter(Boolean).join(' · ')}
-                  </ThemedText>
-                )}
-                <View style={styles.tagRow}>
-                  {item.tags.slice(0, 4).map((tag) => (
-                    <TagChip key={tag} label={tag} />
-                  ))}
-                </View>
+        <ScreenContainer>
+          <View style={styles.header}>
+            <View style={styles.titleRow}>
+              <View style={styles.titleBlock}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  買之前，先查一下
+                </ThemedText>
+                <ThemedText type="subtitle">我的收藏</ThemedText>
               </View>
+              <View style={[styles.countPill, { backgroundColor: theme.backgroundElement }]}>
+                <ThemedText type="smallBold" themeColor="textSecondary">
+                  {visibleItems.length} 件
+                </ThemedText>
+              </View>
+            </View>
+
+            <View style={[styles.search, { backgroundColor: theme.backgroundElement }]}>
+              <Icon name="search" size={18} color={theme.textSecondary} />
+              <TextInput
+                value={query}
+                onChangeText={(text) => {
+                  setQuery(text);
+                  reload(text);
+                }}
+                placeholder="搜尋名稱、主題、系列、顏色或標籤"
+                placeholderTextColor={theme.textSecondary}
+                style={[styles.searchInput, { color: theme.text }]}
+              />
+            </View>
+
+            <StatusToggle value={status} onChange={setStatus} />
+
+            {themeOptions.length > 0 && (
+              <FilterRow label="主題" options={themeOptions} value={themeFilter} onChange={setThemeFilter} />
+            )}
+            {typeOptions.length > 0 && (
+              <FilterRow label="類型" options={typeOptions} value={typeFilter} onChange={setTypeFilter} />
+            )}
+          </View>
+
+          <FlatList
+            key={`cols-${columns}`}
+            data={visibleItems}
+            numColumns={columns}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.list}
+            columnWrapperStyle={styles.column}
+            ListEmptyComponent={
+              filtering ? (
+                <EmptyState
+                  icon="search"
+                  title="找不到符合的收藏"
+                  description="換個關鍵字，或調整上方的主題與類型篩選。"
+                  actionLabel="清除搜尋條件"
+                  onAction={clearFilters}
+                />
+              ) : (
+                <EmptyState
+                  icon="archive"
+                  title={status === 'owned' ? '這個清單還是空的' : '還沒有想要的收藏'}
+                  description={
+                    status === 'owned'
+                      ? '按右下角的 ＋，拍下你的第一件收藏。'
+                      : '看到想買的先拍起來，之後逛街就查得到。'
+                  }
+                  actionLabel={__DEV__ ? (seeding ? '載入中…' : '載入範例資料') : undefined}
+                  onAction={__DEV__ ? handleSeed : undefined}
+                />
+              )
+            }
+            renderItem={({ item }) => <ItemCard item={item} onPress={() => router.push(`/item/${item.id}`)} />}
+          />
+
+          {__DEV__ && items.length > 0 && (
+            <Pressable onPress={handleClearAll} style={styles.devReset} disabled={seeding}>
+              <ThemedText type="small" themeColor="textSecondary">
+                {seeding ? '清除中…' : '清除全部（僅開發模式）'}
+              </ThemedText>
             </Pressable>
           )}
-        />
 
-        <Pressable style={[styles.fab, { backgroundColor: theme.text }]} onPress={() => router.push('/add')}>
-          <ThemedText type="title" themeColor="background" style={styles.fabLabel}>
-            +
-          </ThemedText>
-        </Pressable>
+          <Pressable
+            style={[styles.fab, { backgroundColor: theme.accent }]}
+            onPress={() => router.push('/add')}>
+            <Icon name="plus" size={26} color={theme.onAccent} />
+          </Pressable>
+        </ScreenContainer>
       </SafeAreaView>
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  accountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginHorizontal: Spacing.three,
-    marginTop: Spacing.three,
-    gap: Spacing.two,
-  },
-  accountEmail: {
-    flex: 1,
-  },
-  search: {
-    marginHorizontal: Spacing.three,
-    marginTop: Spacing.two,
-    borderRadius: Spacing.two,
+  container: { flex: 1 },
+  safeArea: { flex: 1 },
+  header: {
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    fontSize: 16,
-  },
-  list: {
-    padding: Spacing.three,
-    gap: Spacing.two,
-  },
-  empty: {
-    textAlign: 'center',
-    marginTop: Spacing.six,
-  },
-  card: {
-    flexDirection: 'row',
-    borderRadius: Spacing.two,
-    padding: Spacing.two,
+    paddingTop: Spacing.four,
     gap: Spacing.three,
   },
-  thumb: {
-    width: 64,
-    height: 64,
-    borderRadius: Spacing.one,
-  },
-  thumbPlaceholder: {},
-  cardBody: {
-    flex: 1,
-    justifyContent: 'center',
-    gap: Spacing.half,
-  },
-  tagRow: {
+  titleRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.one,
-    marginTop: Spacing.half,
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: Spacing.three,
   },
+  titleBlock: { flexShrink: 1 },
+  countPill: {
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one + 2,
+    borderRadius: 999,
+    marginBottom: Spacing.one,
+  },
+  search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    borderRadius: Spacing.three,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two + 2,
+  },
+  searchInput: { flex: 1, fontSize: 16 },
+  list: {
+    padding: Spacing.three,
+    gap: Spacing.three,
+    paddingBottom: Spacing.six + Spacing.four,
+  },
+  column: { gap: Spacing.three },
+  devReset: { alignItems: 'center', paddingBottom: Spacing.two },
   fab: {
     position: 'absolute',
     right: Spacing.four,
@@ -167,9 +246,10 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  fabLabel: {
-    fontSize: 28,
-    lineHeight: 32,
+    shadowColor: '#2E2A24',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
   },
 });

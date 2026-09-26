@@ -1,14 +1,22 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { FormField } from '@/components/form-field';
+import { Icon } from '@/components/icon';
+import { InlineBanner } from '@/components/inline-banner';
+import { ScreenContainer } from '@/components/screen-container';
+import { Section } from '@/components/section';
+import { StatusToggle } from '@/components/status-toggle';
 import { TagEditor } from '@/components/tag-editor';
+import { ThemeSelector } from '@/components/theme-selector';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { TypePicker } from '@/components/type-picker';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { deleteItem, getItem, ItemWithTags, updateItem } from '@/lib/db';
+import { deleteItem, getItem, ItemWithTags, listItems, updateItem } from '@/lib/db';
 
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -16,49 +24,70 @@ export default function ItemDetailScreen() {
   const theme = useTheme();
 
   const [item, setItem] = useState<ItemWithTags | null>(null);
+  const [loading, setLoading] = useState(true);
   const [name, setName] = useState('');
-  const [character, setCharacter] = useState('');
+  const [themes, setThemes] = useState<string[]>([]);
   const [series, setSeries] = useState('');
-  const [category, setCategory] = useState('');
+  const [type, setType] = useState('');
+  const [status, setStatus] = useState('owned');
+  const [size, setSize] = useState('');
+  const [quantity, setQuantity] = useState('1');
   const [color, setColor] = useState('');
   const [notes, setNotes] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  // Alert.alert is a no-op on react-native-web — both the error messages and the
+  // delete confirmation have to render in the page to exist at all in a browser.
+  const [error, setError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  const [knownThemes, setKnownThemes] = useState<string[]>([]);
+  useEffect(() => {
+    listItems()
+      .then((items) => setKnownThemes([...new Set(items.flatMap((i) => i.themes))].sort()))
+      .catch(() => setKnownThemes([]));
+  }, []);
 
   useEffect(() => {
     if (!id) return;
-    getItem(id).then((loaded) => {
-      if (!loaded) return;
-      setItem(loaded);
-      setName(loaded.name);
-      setCharacter(loaded.character ?? '');
-      setSeries(loaded.series ?? '');
-      setCategory(loaded.category ?? '');
-      setColor(loaded.color ?? '');
-      setNotes(loaded.notes ?? '');
-      setTags(loaded.tags);
-    });
+    getItem(id)
+      .then((loaded) => {
+        if (!loaded) return;
+        setItem(loaded);
+        setName(loaded.name);
+        setThemes(loaded.themes);
+        setSeries(loaded.series ?? '');
+        setType(loaded.type ?? '');
+        setStatus(loaded.status);
+        setSize(loaded.size ?? '');
+        setQuantity(String(loaded.quantity));
+        setColor(loaded.color ?? '');
+        setNotes(loaded.notes ?? '');
+        setTags(loaded.tags);
+      })
+      .catch((err) => setError(`載入失敗：${err instanceof Error ? err.message : String(err)}`))
+      .finally(() => setLoading(false));
   }, [id]);
-
-  if (!item) {
-    return (
-      <ThemedView style={styles.container}>
-        <SafeAreaView style={styles.safeArea} />
-      </ThemedView>
-    );
-  }
 
   async function handleSave() {
     if (!item) return;
+    if (!name.trim()) {
+      setError('請先填寫名稱再儲存。');
+      return;
+    }
     setSaving(true);
+    setError(null);
     try {
       await updateItem(
         item.id,
         {
           name: name.trim(),
-          character: character.trim() || null,
+          themes: themes.map((t) => t.trim()).filter(Boolean),
           series: series.trim() || null,
-          category: category.trim() || null,
+          type: type.trim() || null,
+          status,
+          size: size.trim() || null,
+          quantity: Math.max(1, Number.parseInt(quantity, 10) || 1),
           color: color.trim() || null,
           notes: notes.trim() || null,
           photoUri: item.photoUri,
@@ -66,122 +95,154 @@ export default function ItemDetailScreen() {
         tags,
       );
       router.back();
-    } finally {
+    } catch (err) {
+      setError(`儲存失敗：${err instanceof Error ? err.message : String(err)}`);
       setSaving(false);
     }
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!item) return;
-    Alert.alert('Delete item?', `This will remove "${item.name}" from your catalog.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          await deleteItem(item.id);
-          router.back();
-        },
-      },
-    ]);
+    try {
+      await deleteItem(item.id);
+      router.back();
+    } catch (err) {
+      setConfirmingDelete(false);
+      setError(`刪除失敗：${err instanceof Error ? err.message : String(err)}`);
+    }
   }
+
+  if (loading || !item) {
+    return (
+      <ThemedView style={styles.container}>
+        <SafeAreaView style={styles.safeArea}>
+          <ScreenContainer style={styles.centered}>
+            <ThemedText type="small" themeColor="textSecondary">
+              {loading ? '載入中…' : '找不到這筆收藏。'}
+            </ThemedText>
+          </ScreenContainer>
+        </SafeAreaView>
+      </ThemedView>
+    );
+  }
+
+  const createdAt = new Date(item.createdAt);
+  const createdLabel = `${createdAt.getFullYear()}/${String(createdAt.getMonth() + 1).padStart(2, '0')}/${String(
+    createdAt.getDate(),
+  ).padStart(2, '0')}`;
 
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-        <ScrollView contentContainerStyle={styles.scroll}>
-          {item.photoUri && <Image source={{ uri: item.photoUri }} style={styles.photo} />}
+        <ScreenContainer>
+          <ScrollView contentContainerStyle={styles.scroll}>
+            {error && <InlineBanner tone="error" message={error} onDismiss={() => setError(null)} />}
 
-          <Field label="Name" value={name} onChangeText={setName} theme={theme} />
-          <Field label="Character" value={character} onChangeText={setCharacter} theme={theme} />
-          <Field label="Series" value={series} onChangeText={setSeries} theme={theme} />
-          <Field label="Category" value={category} onChangeText={setCategory} theme={theme} />
-          <Field label="Color" value={color} onChangeText={setColor} theme={theme} />
-          <Field label="Notes" value={notes} onChangeText={setNotes} theme={theme} multiline />
+            {item.photoUri && (
+              <Image
+                source={{ uri: item.photoUri }}
+                style={[styles.photo, { backgroundColor: theme.backgroundElement }]}
+                resizeMode="cover"
+              />
+            )}
 
-          <View style={styles.field}>
             <ThemedText type="small" themeColor="textSecondary">
-              Tags
+              建立於 {createdLabel}
             </ThemedText>
-            <TagEditor tags={tags} onChange={setTags} />
-          </View>
 
-          <Pressable style={[styles.saveButton, { backgroundColor: theme.text }]} disabled={saving} onPress={handleSave}>
-            <ThemedText themeColor="background" type="smallBold">
-              {saving ? 'Saving…' : 'Save Changes'}
-            </ThemedText>
-          </Pressable>
+            <Section title="基本資料">
+              <FormField label="名稱" value={name} onChangeText={setName} />
 
-          <Pressable style={styles.deleteButton} onPress={handleDelete}>
-            <ThemedText type="smallBold" style={styles.deleteLabel}>
-              Delete Item
-            </ThemedText>
-          </Pressable>
-        </ScrollView>
+              <View style={styles.field}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  主題
+                </ThemedText>
+                <ThemeSelector value={themes} suggestions={knownThemes} onChange={setThemes} />
+              </View>
+
+              <FormField label="系列" value={series} onChangeText={setSeries} />
+            </Section>
+
+            <Section title="分類與標籤">
+              <View style={styles.field}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  類型
+                </ThemedText>
+                <TypePicker value={type} onChange={setType} />
+              </View>
+
+              <View style={styles.pairRow}>
+                <View style={styles.pairItem}>
+                  <FormField label="尺寸" value={size} onChangeText={setSize} />
+                </View>
+                <View style={styles.pairItem}>
+                  <FormField label="數量" value={quantity} onChangeText={setQuantity} />
+                </View>
+              </View>
+
+              <FormField label="顏色" value={color} onChangeText={setColor} />
+
+              <View style={styles.field}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  標籤
+                </ThemedText>
+                <TagEditor tags={tags} onChange={setTags} />
+              </View>
+            </Section>
+
+            <Section title="收藏狀態">
+              <View style={styles.field}>
+                <StatusToggle value={status} onChange={setStatus} />
+              </View>
+              <FormField label="備註" value={notes} onChangeText={setNotes} multiline />
+            </Section>
+
+            <Pressable
+              style={[styles.saveButton, { backgroundColor: theme.accent }, saving && styles.disabled]}
+              disabled={saving}
+              onPress={handleSave}>
+              <ThemedText themeColor="onAccent" type="smallBold">
+                {saving ? '儲存中…' : '儲存變更'}
+              </ThemedText>
+            </Pressable>
+
+            {confirmingDelete ? (
+              <InlineBanner
+                tone="danger"
+                message={`確定要刪除「${item.name}」？此動作無法復原。`}
+                actionLabel="確定刪除"
+                onAction={handleDelete}
+                onDismiss={() => setConfirmingDelete(false)}
+              />
+            ) : (
+              <Pressable style={styles.deleteButton} onPress={() => setConfirmingDelete(true)}>
+                <Icon name="trash" size={16} color={theme.danger} />
+                <ThemedText type="smallBold" style={{ color: theme.danger }}>
+                  刪除這筆收藏
+                </ThemedText>
+              </Pressable>
+            )}
+          </ScrollView>
+        </ScreenContainer>
       </SafeAreaView>
     </ThemedView>
-  );
-}
-
-function Field({
-  label,
-  value,
-  onChangeText,
-  theme,
-  multiline,
-}: {
-  label: string;
-  value: string;
-  onChangeText: (text: string) => void;
-  theme: ReturnType<typeof useTheme>;
-  multiline?: boolean;
-}) {
-  return (
-    <View style={styles.field}>
-      <ThemedText type="small" themeColor="textSecondary">
-        {label}
-      </ThemedText>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        multiline={multiline}
-        placeholderTextColor={theme.textSecondary}
-        style={[
-          styles.input,
-          multiline && styles.inputMultiline,
-          { color: theme.text, borderColor: theme.backgroundElement },
-        ]}
-      />
-    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
+  centered: { alignItems: 'center', justifyContent: 'center' },
   scroll: {
     padding: Spacing.three,
     gap: Spacing.three,
+    paddingBottom: Spacing.six,
   },
-  photo: {
-    width: '100%',
-    height: 220,
-    borderRadius: Spacing.two,
-  },
-  field: {
-    gap: Spacing.one,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: Spacing.one,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.two,
-    fontSize: 16,
-  },
-  inputMultiline: {
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
+  photo: { width: '100%', height: 260, borderRadius: Spacing.three },
+  field: { gap: Spacing.one },
+  pairRow: { flexDirection: 'row', gap: Spacing.three },
+  pairItem: { flex: 1 },
+  disabled: { opacity: 0.5 },
   saveButton: {
     marginTop: Spacing.two,
     paddingVertical: Spacing.three,
@@ -189,10 +250,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   deleteButton: {
-    paddingVertical: Spacing.two,
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  deleteLabel: {
-    color: '#e0453c',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    paddingVertical: Spacing.two,
   },
 });

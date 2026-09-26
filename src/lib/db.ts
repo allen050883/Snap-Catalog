@@ -19,9 +19,16 @@ import { auth, db } from '@/lib/firebase';
 export type Item = {
   id: string;
   name: string;
-  character: string | null;
+  /** Multi-valued so a collaboration (拉拉熊 × 三麗鷗) is findable under either. */
+  themes: string[];
   series: string | null;
-  category: string | null;
+  /** Slug from constants/item-types.ts. */
+  type: string | null;
+  /** Slug from constants/item-types.ts STATUSES. */
+  status: string;
+  /** Free text: "M", "坐姿", "12 cm". Same series in another size is the classic duplicate. */
+  size: string | null;
+  quantity: number;
   color: string | null;
   notes: string | null;
   photoUri: string | null;
@@ -43,9 +50,12 @@ function fromDoc(snap: QueryDocumentSnapshot<DocumentData>): ItemWithTags {
   return {
     id: snap.id,
     name: data.name,
-    character: data.character ?? null,
+    themes: Array.isArray(data.themes) ? data.themes : [],
     series: data.series ?? null,
-    category: data.category ?? null,
+    type: data.type ?? null,
+    status: data.status ?? 'owned',
+    size: data.size ?? null,
+    quantity: typeof data.quantity === 'number' && data.quantity > 0 ? data.quantity : 1,
     color: data.color ?? null,
     notes: data.notes ?? null,
     photoUri: data.photoUri ?? null,
@@ -83,7 +93,7 @@ export async function listItems(search?: string): Promise<ItemWithTags[]> {
   if (!needle) return items;
 
   return items.filter((item) =>
-    [item.name, item.character, item.series, item.category, item.color, ...item.tags]
+    [item.name, item.series, item.type, item.size, item.color, ...item.themes, ...item.tags]
       .filter((field): field is string => Boolean(field))
       .some((field) => field.toLowerCase().includes(needle)),
   );
@@ -94,3 +104,32 @@ export async function getItem(id: string): Promise<ItemWithTags | null> {
   if (!snap.exists()) return null;
   return fromDoc(snap as QueryDocumentSnapshot<DocumentData>);
 }
+
+/**
+ * Fills the catalog with sample rows so the layout can be reviewed without spending
+ * AI quota, and empties it again. Development only.
+ *
+ * The `__DEV__` test is at module scope, not inside the function: with it inside,
+ * Metro still emitted the sample data as its own 3.7KB chunk in a production build
+ * (the dynamic import is resolved when the module graph is built, before the dead
+ * branch is eliminated). Picking the implementation up here means the release build
+ * keeps only the no-op arm, and the data never enters the graph at all.
+ */
+export const seedMockItems: () => Promise<void> = __DEV__
+  ? async () => {
+      const { MOCK_ITEMS } = await import('@/lib/mock-data');
+      // Sequential rather than Promise.all: createItem stamps createdAt with
+      // serverTimestamp(), and writing them in order keeps the list order predictable.
+      for (const { item, tags } of MOCK_ITEMS) {
+        await createItem(item, tags);
+      }
+    }
+  : async () => {};
+
+/** Development only — deletes every item in the signed-in user's catalog. */
+export const clearAllItems: () => Promise<void> = __DEV__
+  ? async () => {
+      const snap = await getDocs(itemsCollection());
+      await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
+    }
+  : async () => {};

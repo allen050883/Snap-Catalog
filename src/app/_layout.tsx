@@ -1,5 +1,5 @@
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
-import { ActivityIndicator, useColorScheme } from 'react-native';
+import { DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { ActivityIndicator } from 'react-native';
 // Paused for now — rewarded-ad bonus quota. Re-enable alongside src/app/add.tsx's
 // commented-out ad-bonus block; see README's "Daily AI quota + rewarded ads" section.
 // import { useEffect } from 'react';
@@ -7,11 +7,23 @@ import { ActivityIndicator, useColorScheme } from 'react-native';
 // import mobileAds from 'react-native-google-mobile-ads';
 
 import { LoginScreen } from '@/components/login-screen';
+import { Colors } from '@/constants/theme';
 import { ThemedView } from '@/components/themed-view';
 import { useAuthUser } from '@/hooks/use-auth-user';
 
+const navigationTheme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    background: Colors.background,
+    card: Colors.background,
+    text: Colors.text,
+    border: Colors.backgroundSelected,
+    primary: Colors.accent,
+  },
+};
+
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
   const { user, initializing } = useAuthUser();
 
   // useEffect(() => {
@@ -24,7 +36,7 @@ export default function RootLayout() {
   // }, []);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={navigationTheme}>
       {initializing ? (
         <ThemedView style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator />
@@ -33,9 +45,9 @@ export default function RootLayout() {
         <LoginScreen />
       ) : (
         <Stack>
-          <Stack.Screen name="index" options={{ title: 'Snap Catalog' }} />
-          <Stack.Screen name="add" options={{ title: 'Add Item', presentation: 'modal' }} />
-          <Stack.Screen name="item/[id]" options={{ title: 'Item' }} />
+          <Stack.Screen name="index" options={{ title: 'Snap Catalog', headerShown: false }} />
+          <Stack.Screen name="add" options={{ title: '新增收藏', presentation: 'modal' }} />
+          <Stack.Screen name="item/[id]" options={{ title: '收藏細節' }} />
         </Stack>
       )}
     </ThemeProvider>

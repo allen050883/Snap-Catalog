@@ -1,12 +1,20 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { FormField } from '@/components/form-field';
+import { Icon } from '@/components/icon';
+import { InlineBanner } from '@/components/inline-banner';
+import { ScreenContainer } from '@/components/screen-container';
+import { Section } from '@/components/section';
+import { StatusToggle } from '@/components/status-toggle';
 import { TagEditor } from '@/components/tag-editor';
+import { ThemeSelector } from '@/components/theme-selector';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { TypePicker } from '@/components/type-picker';
 import { Spacing } from '@/constants/theme';
 // Paused for now — rewarded-ad bonus quota. Re-enable by uncommenting this import,
 // the `handleRewardEarned`/`bonusAd` block below, and the ad-gate button in the JSX,
@@ -15,7 +23,7 @@ import { Spacing } from '@/constants/theme';
 // import { useBonusAnalysisAd } from '@/hooks/use-bonus-analysis-ad';
 import { useTheme } from '@/hooks/use-theme';
 import { compressPhotoToBase64 } from '@/lib/compress-photo';
-import { createItem } from '@/lib/db';
+import { createItem, listItems } from '@/lib/db';
 import { suggestTagsForPhoto } from '@/lib/groq';
 import { FREE_DAILY_LIMIT, getUsageToday, recordAnalysisUsed, UsageToday } from '@/lib/usage';
 
@@ -31,15 +39,30 @@ export default function AddItemScreen() {
   const photoUri = photoBase64 ? `data:image/jpeg;base64,${photoBase64}` : null;
   const [preparingPhoto, setPreparingPhoto] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analyzed, setAnalyzed] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Alert.alert is a no-op on react-native-web, so problems are surfaced in the page.
+  const [error, setError] = useState<string | null>(null);
 
   const [name, setName] = useState('');
-  const [character, setCharacter] = useState('');
+  const [themes, setThemes] = useState<string[]>([]);
   const [series, setSeries] = useState('');
-  const [category, setCategory] = useState('');
+  const [type, setType] = useState('');
+  const [status, setStatus] = useState('owned');
+  const [size, setSize] = useState('');
+  const [quantity, setQuantity] = useState('1');
   const [color, setColor] = useState('');
   const [notes, setNotes] = useState('');
   const [tags, setTags] = useState<string[]>([]);
+
+  // Offered as one-tap chips in the theme picker so an existing theme is never
+  // retyped — that is what stops "拉拉熊" splitting into near-identical spellings.
+  const [knownThemes, setKnownThemes] = useState<string[]>([]);
+  useEffect(() => {
+    listItems()
+      .then((items) => setKnownThemes([...new Set(items.flatMap((item) => item.themes))].sort()))
+      .catch(() => setKnownThemes([]));
+  }, []);
 
   const [quota, setQuota] = useState<UsageToday | null>(null);
   useEffect(() => {
@@ -60,22 +83,25 @@ export default function AddItemScreen() {
     const current = await getUsageToday();
     if (current.remaining <= 0) {
       setQuota(current);
-      Alert.alert('今日次數已用完', `已達每日 ${FREE_DAILY_LIMIT} 次免費 AI 辨識上限，請明天再試。`);
+      setError(`今天的 ${FREE_DAILY_LIMIT} 次免費 AI 辨識已用完，明天會重置。你還是可以自己填寫欄位後儲存。`);
       return;
     }
 
     setAnalyzing(true);
+    setError(null);
     try {
       const suggestion = await suggestTagsForPhoto(base64);
       setName(suggestion.name);
-      setCharacter(suggestion.character ?? '');
+      setThemes(suggestion.themes);
       setSeries(suggestion.series ?? '');
-      setCategory(suggestion.category ?? '');
+      setType(suggestion.type ?? '');
+      setSize(suggestion.size ?? '');
       setColor(suggestion.color ?? '');
       setTags(suggestion.tags);
+      setAnalyzed(true);
       setQuota(await recordAnalysisUsed());
-    } catch (error) {
-      Alert.alert('AI tagging failed', error instanceof Error ? error.message : String(error));
+    } catch (err) {
+      setError(`AI 辨識失敗：${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setAnalyzing(false);
     }
@@ -87,7 +113,7 @@ export default function AddItemScreen() {
         ? await ImagePicker.requestCameraPermissionsAsync()
         : await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permission needed', 'Please allow access to continue.');
+      setError(source === 'camera' ? '需要相機權限才能拍照。' : '需要相簿權限才能選擇照片。');
       return;
     }
 
@@ -99,12 +125,15 @@ export default function AddItemScreen() {
     if (result.canceled || !asset) return;
 
     setPreparingPhoto(true);
+    setError(null);
     try {
       const base64 = await compressPhotoToBase64(asset.uri);
       setPhotoBase64(base64);
+      // Recognize first, then let the fields be corrected — the whole point of the
+      // screen is that you rarely have to type from scratch.
       await analyze(base64);
-    } catch (error) {
-      Alert.alert('Could not process photo', error instanceof Error ? error.message : String(error));
+    } catch (err) {
+      setError(`照片處理失敗：${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setPreparingPhoto(false);
     }
@@ -112,17 +141,21 @@ export default function AddItemScreen() {
 
   async function handleSave() {
     if (!name.trim()) {
-      Alert.alert('Name required', 'Give this item a name before saving.');
+      setError('請先填寫名稱再儲存。');
       return;
     }
     setSaving(true);
+    setError(null);
     try {
       await createItem(
         {
           name: name.trim(),
-          character: character.trim() || null,
+          themes: themes.map((t) => t.trim()).filter(Boolean),
           series: series.trim() || null,
-          category: category.trim() || null,
+          type: type.trim() || null,
+          status,
+          size: size.trim() || null,
+          quantity: Math.max(1, Number.parseInt(quantity, 10) || 1),
           color: color.trim() || null,
           notes: notes.trim() || null,
           photoUri,
@@ -130,135 +163,180 @@ export default function AddItemScreen() {
         tags,
       );
       router.back();
+    } catch (err) {
+      setError(`儲存失敗：${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSaving(false);
     }
   }
 
+  const busy = preparingPhoto || analyzing;
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-        <ScrollView contentContainerStyle={styles.scroll}>
-          <View style={styles.photoRow}>
-            {photoUri ? (
-              <Image source={{ uri: photoUri }} style={styles.photo} />
-            ) : (
-              <View style={[styles.photo, styles.photoPlaceholder, { backgroundColor: theme.backgroundElement }]}>
-                <ThemedText themeColor="textSecondary">No photo</ThemedText>
+        <ScreenContainer>
+          <ScrollView contentContainerStyle={styles.scroll}>
+            {error && <InlineBanner tone="error" message={error} onDismiss={() => setError(null)} />}
+
+            <Section title="照片" hint="先拍照辨識，再確認收藏資訊">
+              <View style={styles.photoRow}>
+                <View style={[styles.photoWrap, { backgroundColor: theme.backgroundSelected }]}>
+                  {photoUri ? (
+                    <Image source={{ uri: photoUri }} style={styles.photo} resizeMode="cover" />
+                  ) : (
+                    <View style={styles.photoEmpty}>
+                      <Icon name="image" size={22} color={theme.textSecondary} />
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.photoButtons}>
+                  <ActionButton icon="camera" label="拍照" disabled={busy} onPress={() => pickFrom('camera')} />
+                  <ActionButton icon="upload" label="從相簿選擇" disabled={busy} onPress={() => pickFrom('library')} />
+                  {photoBase64 && quota && quota.remaining > 0 && (
+                    <ActionButton
+                      icon="sparkles"
+                      label={analyzing ? '辨識中…' : '重新辨識這張照片'}
+                      disabled={busy}
+                      onPress={() => analyze(photoBase64)}
+                    />
+                  )}
+                </View>
               </View>
-            )}
-            <View style={styles.photoButtons}>
-              <Pressable
-                style={[styles.button, { backgroundColor: theme.backgroundElement }]}
-                disabled={preparingPhoto}
-                onPress={() => pickFrom('camera')}>
-                <ThemedText>{preparingPhoto ? 'Preparing photo…' : 'Take Photo'}</ThemedText>
-              </Pressable>
-              <Pressable
-                style={[styles.button, { backgroundColor: theme.backgroundElement }]}
-                disabled={preparingPhoto}
-                onPress={() => pickFrom('library')}>
-                <ThemedText>Choose from Library</ThemedText>
-              </Pressable>
-              {photoBase64 && quota && quota.remaining > 0 && (
-                <Pressable
-                  style={[styles.button, { backgroundColor: theme.backgroundElement }]}
-                  disabled={analyzing}
-                  onPress={() => analyze(photoBase64)}>
-                  <ThemedText>{analyzing ? 'Re-analyzing…' : 'Re-run AI tagging'}</ThemedText>
-                </Pressable>
+
+              {busy ? (
+                <View style={styles.statusRow}>
+                  <ActivityIndicator color={theme.textSecondary} />
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {preparingPhoto && !analyzing ? '照片處理中…' : 'AI 正在辨識照片…'}
+                  </ThemedText>
+                </View>
+              ) : analyzed ? (
+                <View style={styles.statusRow}>
+                  <Icon name="check" size={16} color={theme.textSecondary} />
+                  <ThemedText type="small" themeColor="textSecondary">
+                    AI 辨識完成，下方欄位可以直接修改
+                  </ThemedText>
+                </View>
+              ) : null}
+
+              {quota && (
+                <ThemedText type="small" themeColor="textSecondary">
+                  {quota.remaining > 0
+                    ? `今日還可 AI 辨識 ${quota.remaining} 次（每日免費 ${FREE_DAILY_LIMIT} 次）`
+                    : `今日 ${FREE_DAILY_LIMIT} 次免費 AI 辨識已用完，明天重置`}
+                </ThemedText>
               )}
-            </View>
-          </View>
 
-          {quota && (
-            <ThemedText type="small" themeColor="textSecondary">
-              {quota.remaining > 0
-                ? `今日還可 AI 辨識 ${quota.remaining} 次（每日免費 ${FREE_DAILY_LIMIT} 次）`
-                : `今日 ${FREE_DAILY_LIMIT} 次免費 AI 辨識已用完`}
-            </ThemedText>
-          )}
+              {/* Paused — rewarded-ad bonus button. See the import comment near the top of this file. */}
+              {/* {quota && quota.remaining === 0 && (
+                <ActionButton
+                  icon="sparkles"
+                  label={bonusAd.isReady ? '看廣告，多辨識 1 次' : '廣告準備中…'}
+                  disabled={!bonusAd.isReady}
+                  onPress={bonusAd.show}
+                />
+              )} */}
+            </Section>
 
-          {/* Paused — rewarded-ad bonus button. See the import comment near the top of this file. */}
-          {/* {quota && quota.remaining === 0 && (
+            <Section title="基本資料">
+              <FormField label="名稱" value={name} onChangeText={setName} placeholder="例：拉拉熊 草莓系列 坐姿玩偶" />
+
+              <View style={styles.field}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  主題
+                </ThemedText>
+                <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
+                  聯名商品可以選兩個，之後從任一邊都找得到
+                </ThemedText>
+                <ThemeSelector value={themes} suggestions={knownThemes} onChange={setThemes} />
+              </View>
+
+              <FormField label="系列" value={series} onChangeText={setSeries} placeholder="例：草莓派對系列" />
+            </Section>
+
+            <Section title="分類與標籤">
+              <View style={styles.field}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  類型
+                </ThemedText>
+                <TypePicker value={type} onChange={setType} />
+              </View>
+
+              <View style={styles.pairRow}>
+                <View style={styles.pairItem}>
+                  <FormField label="尺寸" value={size} onChangeText={setSize} placeholder="例：M・坐姿" />
+                </View>
+                <View style={styles.pairItem}>
+                  <FormField label="數量" value={quantity} onChangeText={setQuantity} placeholder="1" />
+                </View>
+              </View>
+
+              <FormField label="顏色" value={color} onChangeText={setColor} placeholder="例：棕色、粉紅色" />
+
+              <View style={styles.field}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  標籤
+                </ThemedText>
+                <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
+                  中英文都會存，之後兩種打法都搜得到
+                </ThemedText>
+                <TagEditor tags={tags} onChange={setTags} />
+              </View>
+            </Section>
+
+            <Section title="收藏狀態">
+              <View style={styles.field}>
+                <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
+                  還沒買的先存成「想要」，逛街時查得到
+                </ThemedText>
+                <StatusToggle value={status} onChange={setStatus} />
+              </View>
+              <FormField
+                label="備註"
+                value={notes}
+                onChangeText={setNotes}
+                placeholder="購入日期、價格、在哪買的…"
+                multiline
+              />
+            </Section>
+
             <Pressable
-              style={[styles.button, { backgroundColor: theme.backgroundElement }, !bonusAd.isReady && styles.buttonDisabled]}
-              disabled={!bonusAd.isReady}
-              onPress={bonusAd.show}>
-              <ThemedText>{bonusAd.isReady ? '看廣告，多辨識 1 次' : '廣告準備中…'}</ThemedText>
-            </Pressable>
-          )} */}
-
-          {analyzing && (
-            <View style={styles.analyzingRow}>
-              <ActivityIndicator />
-              <ThemedText type="small" themeColor="textSecondary">
-                Asking AI to identify this item…
+              style={[styles.saveButton, { backgroundColor: theme.accent }, saving && styles.disabled]}
+              disabled={saving}
+              onPress={handleSave}>
+              <ThemedText themeColor="onAccent" type="smallBold">
+                {saving ? '儲存中…' : '儲存收藏'}
               </ThemedText>
-            </View>
-          )}
-
-          <Field label="Name" value={name} onChangeText={setName} theme={theme} />
-          <Field label="Character" value={character} onChangeText={setCharacter} theme={theme} />
-          <Field label="Series" value={series} onChangeText={setSeries} theme={theme} />
-          <Field label="Category" value={category} onChangeText={setCategory} theme={theme} placeholder="plush, figure, keychain…" />
-          <Field label="Color" value={color} onChangeText={setColor} theme={theme} />
-          <Field label="Notes" value={notes} onChangeText={setNotes} theme={theme} multiline />
-
-          <View style={styles.field}>
-            <ThemedText type="small" themeColor="textSecondary">
-              Tags
-            </ThemedText>
-            <TagEditor tags={tags} onChange={setTags} />
-          </View>
-
-          <Pressable
-            style={[styles.saveButton, { backgroundColor: theme.text }]}
-            disabled={saving}
-            onPress={handleSave}>
-            <ThemedText themeColor="background" type="smallBold">
-              {saving ? 'Saving…' : 'Save Item'}
-            </ThemedText>
-          </Pressable>
-        </ScrollView>
+            </Pressable>
+          </ScrollView>
+        </ScreenContainer>
       </SafeAreaView>
     </ThemedView>
   );
 }
 
-function Field({
+function ActionButton({
+  icon,
   label,
-  value,
-  onChangeText,
-  theme,
-  placeholder,
-  multiline,
+  onPress,
+  disabled,
 }: {
+  icon: 'camera' | 'upload' | 'sparkles';
   label: string;
-  value: string;
-  onChangeText: (text: string) => void;
-  theme: ReturnType<typeof useTheme>;
-  placeholder?: string;
-  multiline?: boolean;
+  onPress: () => void;
+  disabled?: boolean;
 }) {
+  const theme = useTheme();
   return (
-    <View style={styles.field}>
-      <ThemedText type="small" themeColor="textSecondary">
-        {label}
-      </ThemedText>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={theme.textSecondary}
-        multiline={multiline}
-        style={[
-          styles.input,
-          multiline && styles.inputMultiline,
-          { color: theme.text, borderColor: theme.backgroundElement },
-        ]}
-      />
-    </View>
+    <Pressable
+      style={[styles.button, { backgroundColor: theme.backgroundElement }, disabled && styles.disabled]}
+      disabled={disabled}
+      onPress={onPress}>
+      <Icon name={icon} size={16} color={theme.text} />
+      <ThemedText type="small">{label}</ThemedText>
+    </Pressable>
   );
 }
 
@@ -267,55 +345,35 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   scroll: {
     padding: Spacing.three,
-    gap: Spacing.three,
+    gap: Spacing.four,
+    paddingBottom: Spacing.six,
   },
-  photoRow: {
+  photoRow: { flexDirection: 'row', gap: Spacing.three },
+  photoWrap: {
+    width: 112,
+    height: 112,
+    borderRadius: Spacing.three,
+    overflow: 'hidden',
+  },
+  photo: { width: '100%', height: '100%' },
+  photoEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  photoButtons: { flex: 1, gap: Spacing.two, justifyContent: 'center' },
+  button: {
     flexDirection: 'row',
-    gap: Spacing.three,
-  },
-  photo: {
-    width: 120,
-    height: 120,
-    borderRadius: Spacing.two,
-  },
-  photoPlaceholder: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  photoButtons: {
-    flex: 1,
     gap: Spacing.two,
-    justifyContent: 'center',
-  },
-  button: {
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.one,
+    borderRadius: Spacing.two,
   },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  analyzingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-  },
-  field: {
-    gap: Spacing.one,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: Spacing.one,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.two,
-    fontSize: 16,
-  },
-  inputMultiline: {
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
+  disabled: { opacity: 0.5 },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  field: { gap: Spacing.one },
+  hint: { opacity: 0.7, marginTop: -2 },
+  pairRow: { flexDirection: 'row', gap: Spacing.three },
+  pairItem: { flex: 1 },
   saveButton: {
-    marginTop: Spacing.two,
     paddingVertical: Spacing.three,
     borderRadius: Spacing.two,
     alignItems: 'center',

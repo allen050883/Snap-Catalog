@@ -11,6 +11,9 @@
       ]
     }
   },
+  // figma/ is a separate Vite project with its own tsconfig — type-checking it
+  // with the Expo config reports hundreds of errors for deps it never installed here.
+  "exclude": ["figma", "dist", "node_modules"],
   "include": [
     "**/*.ts",
     "**/*.tsx",

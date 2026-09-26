@@ -22,20 +22,20 @@ export function LoginScreen() {
         </ThemedText>
 
         <Pressable
-          style={[styles.button, { backgroundColor: theme.text }, !isReady && styles.buttonDisabled]}
+          style={[styles.button, { backgroundColor: theme.accent }, !isReady && styles.buttonDisabled]}
           disabled={!isReady || signingIn}
           onPress={signIn}>
           {signingIn ? (
-            <ActivityIndicator color={theme.background} />
+            <ActivityIndicator color={theme.onAccent} />
           ) : (
-            <ThemedText themeColor="background" type="smallBold">
+            <ThemedText themeColor="onAccent" type="smallBold">
               使用 Google 登入
             </ThemedText>
           )}
         </Pressable>
 
         {error && (
-          <ThemedText type="small" style={styles.error}>
+          <ThemedText type="small" style={[styles.error, { color: theme.danger }]}>
             登入失敗：{error}
           </ThemedText>
         )}
@@ -64,13 +64,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.five,
     borderRadius: Spacing.two,
     alignItems: 'center',
-    minWidth: 220,
+    minWidth: 240,
   },
   buttonDisabled: {
     opacity: 0.5,
   },
   error: {
-    color: '#e0453c',
     textAlign: 'center',
   },
 });
