@@ -16,8 +16,8 @@ export function ItemCard({ item, onPress }: { item: ItemWithTags; onPress: () =>
   return (
     <Pressable style={[styles.card, { backgroundColor: theme.card }]} onPress={onPress}>
       <View style={[styles.photoWrap, { backgroundColor: theme.backgroundSelected }]}>
-        {item.photoUri ? (
-          <Image source={{ uri: item.photoUri }} style={styles.photo} resizeMode="cover" />
+        {item.thumbnail ? (
+          <Image source={{ uri: item.thumbnail }} style={styles.photo} resizeMode="cover" />
         ) : (
           <View style={styles.photoEmpty}>
             <ThemedText type="small" themeColor="textSecondary">

@@ -16,7 +16,7 @@ import { ThemedView } from '@/components/themed-view';
 import { TypePicker } from '@/components/type-picker';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { deleteItem, getItem, ItemWithTags, listItems, updateItem } from '@/lib/db';
+import { deleteItem, getItem, getItemPhoto, ItemWithTags, listItems, updateItem } from '@/lib/db';
 
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -40,6 +40,10 @@ export default function ItemDetailScreen() {
   // delete confirmation have to render in the page to exist at all in a browser.
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // The item document carries only a thumbnail (see lib/db.ts); the full photo is a
+  // second read, so the screen paints the small one first and swaps when it lands
+  // rather than holding the whole page back on an image.
+  const [fullPhoto, setFullPhoto] = useState<string | null>(null);
 
   const [knownThemes, setKnownThemes] = useState<string[]>([]);
   useEffect(() => {
@@ -47,6 +51,21 @@ export default function ItemDetailScreen() {
       .then((items) => setKnownThemes([...new Set(items.flatMap((i) => i.themes))].sort()))
       .catch(() => setKnownThemes([]));
   }, []);
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    getItemPhoto(id)
+      .then((photo) => {
+        if (!cancelled) setFullPhoto(photo);
+      })
+      // A missing or unreadable full photo is not worth an error banner — the
+      // thumbnail is already on screen and every field still works.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   useEffect(() => {
     if (!id) return;
@@ -90,7 +109,7 @@ export default function ItemDetailScreen() {
           quantity: Math.max(1, Number.parseInt(quantity, 10) || 1),
           color: color.trim() || null,
           notes: notes.trim() || null,
-          photoUri: item.photoUri,
+          thumbnail: item.thumbnail,
         },
         tags,
       );
@@ -138,9 +157,9 @@ export default function ItemDetailScreen() {
           <ScrollView contentContainerStyle={styles.scroll}>
             {error && <InlineBanner tone="error" message={error} onDismiss={() => setError(null)} />}
 
-            {item.photoUri && (
+            {(fullPhoto ?? item.thumbnail) && (
               <Image
-                source={{ uri: item.photoUri }}
+                source={{ uri: fullPhoto ?? item.thumbnail! }}
                 style={[styles.photo, { backgroundColor: theme.backgroundElement }]}
                 resizeMode="cover"
               />

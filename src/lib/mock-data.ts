@@ -5,6 +5,9 @@ import type { ItemInput } from '@/lib/db';
 // straight to <Image source={{ uri }}>, which takes either, and it keeps this file
 // from being megabytes of encoded JPEG.
 //
+// They have no photo document either: `hasPhoto` stays false, so the detail screen
+// shows the same remote image rather than looking for one that was never written.
+//
 // Deliberately spread across themes, types and both statuses so the filter rows and
 // the owned/wished switch actually have something to do. The last entry is a
 // collaboration, which is the case the multi-valued `themes` field exists for.
@@ -29,7 +32,7 @@ export const MOCK_ITEMS: { item: ItemInput; tags: string[] }[] = [
       quantity: 1,
       color: '奶茶棕',
       notes: null,
-      photoUri: PHOTO.bear,
+      thumbnail: PHOTO.bear,
     },
     tags: ['拉拉熊', 'rilakkuma', '限定', '草莓', 'strawberry', '絨毛', 'plush'],
   },
@@ -44,7 +47,7 @@ export const MOCK_ITEMS: { item: ItemInput; tags: string[] }[] = [
       quantity: 1,
       color: '米白色',
       notes: '整盒收的，沒有重複',
-      photoUri: PHOTO.forest,
+      thumbnail: PHOTO.forest,
     },
     tags: ['拉拉熊', 'rilakkuma', '盲盒', 'blind box', '完整盒況', '森林'],
   },
@@ -59,7 +62,7 @@ export const MOCK_ITEMS: { item: ItemInput; tags: string[] }[] = [
       quantity: 1,
       color: '黑色',
       notes: null,
-      photoUri: PHOTO.cat,
+      thumbnail: PHOTO.cat,
     },
     tags: ['三麗鷗', 'sanrio', '黑貓', 'black cat', '限定', '公仔', 'figure'],
   },
@@ -74,7 +77,7 @@ export const MOCK_ITEMS: { item: ItemInput; tags: string[] }[] = [
       quantity: 1,
       color: '象牙白',
       notes: '聖誕節檔期想入手',
-      photoUri: PHOTO.bell,
+      thumbnail: PHOTO.bell,
     },
     tags: ['吉伊卡哇', 'chiikawa', '聖誕節', 'christmas', '吊飾', 'keychain'],
   },
@@ -89,7 +92,7 @@ export const MOCK_ITEMS: { item: ItemInput; tags: string[] }[] = [
       quantity: 2,
       color: '棕色',
       notes: '二手market收的',
-      photoUri: PHOTO.ceramic,
+      thumbnail: PHOTO.ceramic,
     },
     tags: ['寶可夢', 'pokemon', '二手', 'secondhand', '復古', 'retro', '餐具'],
   },
@@ -104,7 +107,7 @@ export const MOCK_ITEMS: { item: ItemInput; tags: string[] }[] = [
       quantity: 1,
       color: '紅色',
       notes: null,
-      photoUri: PHOTO.retro,
+      thumbnail: PHOTO.retro,
     },
     tags: ['寶可夢', 'pokemon', '公仔', 'figure', '經典', 'classic'],
   },
@@ -119,7 +122,7 @@ export const MOCK_ITEMS: { item: ItemInput; tags: string[] }[] = [
       quantity: 1,
       color: '粉紅色、奶油白',
       notes: '兩個主題都找得到這一筆',
-      photoUri: PHOTO.ceramic,
+      thumbnail: PHOTO.ceramic,
     },
     tags: ['拉拉熊', 'rilakkuma', '三麗鷗', 'sanrio', '聯名', 'collab', '馬克杯', 'mug'],
   },

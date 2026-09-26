@@ -22,7 +22,7 @@ import { Spacing } from '@/constants/theme';
 // the plugin entry in app.json. See README's "Daily AI quota + rewarded ads" section.
 // import { useBonusAnalysisAd } from '@/hooks/use-bonus-analysis-ad';
 import { useTheme } from '@/hooks/use-theme';
-import { compressPhotoToBase64 } from '@/lib/compress-photo';
+import { type CompressedPhoto, compressPhoto } from '@/lib/compress-photo';
 import { createItem, listItems } from '@/lib/db';
 import { suggestTagsForPhoto } from '@/lib/groq';
 import { FREE_DAILY_LIMIT, getUsageToday, recordAnalysisUsed, UsageToday } from '@/lib/usage';
@@ -31,12 +31,10 @@ export default function AddItemScreen() {
   const router = useRouter();
   const theme = useTheme();
 
-  // Kept as base64 (not a file:// URI) so this works identically on native and web,
-  // and so it can be stored directly on the Firestore item document (see lib/db.ts) —
-  // already resized/compressed by compressPhotoToBase64 to fit Firestore's 1 MiB
-  // per-document limit.
-  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
-  const photoUri = photoBase64 ? `data:image/jpeg;base64,${photoBase64}` : null;
+  // Data URIs (not file:// URIs) so this works identically on native and web, and so
+  // they can be stored directly on Firestore documents — see lib/compress-photo.ts
+  // for why there are two sizes and lib/db.ts for where each one is written.
+  const [photo, setPhoto] = useState<CompressedPhoto | null>(null);
   const [preparingPhoto, setPreparingPhoto] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzed, setAnalyzed] = useState(false);
@@ -73,11 +71,11 @@ export default function AddItemScreen() {
   // const handleRewardEarned = useCallback(async () => {
   //   const updated = await grantBonusAnalysis();
   //   setQuota(updated);
-  //   if (photoBase64) await analyze(photoBase64);
-  // }, [photoBase64]);
+  //   if (photo) await analyze(photo.full);
+  // }, [photo]);
   // const bonusAd = useBonusAnalysisAd(handleRewardEarned);
 
-  async function analyze(base64: string) {
+  async function analyze(dataUri: string) {
     // Re-check against the database rather than the `quota` state closure, so this
     // stays correct even if called right after quota changed elsewhere.
     const current = await getUsageToday();
@@ -90,7 +88,7 @@ export default function AddItemScreen() {
     setAnalyzing(true);
     setError(null);
     try {
-      const suggestion = await suggestTagsForPhoto(base64);
+      const suggestion = await suggestTagsForPhoto(dataUri);
       setName(suggestion.name);
       setThemes(suggestion.themes);
       setSeries(suggestion.series ?? '');
@@ -127,11 +125,12 @@ export default function AddItemScreen() {
     setPreparingPhoto(true);
     setError(null);
     try {
-      const base64 = await compressPhotoToBase64(asset.uri);
-      setPhotoBase64(base64);
+      const compressed = await compressPhoto(asset.uri);
+      setPhoto(compressed);
       // Recognize first, then let the fields be corrected — the whole point of the
-      // screen is that you rarely have to type from scratch.
-      await analyze(base64);
+      // screen is that you rarely have to type from scratch. The full rendition goes
+      // to the model: the thumbnail is too small to read a character's face from.
+      await analyze(compressed.full);
     } catch (err) {
       setError(`照片處理失敗：${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -158,9 +157,10 @@ export default function AddItemScreen() {
           quantity: Math.max(1, Number.parseInt(quantity, 10) || 1),
           color: color.trim() || null,
           notes: notes.trim() || null,
-          photoUri,
+          thumbnail: photo?.thumbnail ?? null,
         },
         tags,
+        photo?.full,
       );
       router.back();
     } catch (err) {
@@ -182,8 +182,8 @@ export default function AddItemScreen() {
             <Section title="照片" hint="先拍照辨識，再確認收藏資訊">
               <View style={styles.photoRow}>
                 <View style={[styles.photoWrap, { backgroundColor: theme.backgroundSelected }]}>
-                  {photoUri ? (
-                    <Image source={{ uri: photoUri }} style={styles.photo} resizeMode="cover" />
+                  {photo ? (
+                    <Image source={{ uri: photo.thumbnail }} style={styles.photo} resizeMode="cover" />
                   ) : (
                     <View style={styles.photoEmpty}>
                       <Icon name="image" size={22} color={theme.textSecondary} />
@@ -194,12 +194,12 @@ export default function AddItemScreen() {
                 <View style={styles.photoButtons}>
                   <ActionButton icon="camera" label="拍照" disabled={busy} onPress={() => pickFrom('camera')} />
                   <ActionButton icon="upload" label="從相簿選擇" disabled={busy} onPress={() => pickFrom('library')} />
-                  {photoBase64 && quota && quota.remaining > 0 && (
+                  {photo && quota && quota.remaining > 0 && (
                     <ActionButton
                       icon="sparkles"
                       label={analyzing ? '辨識中…' : '重新辨識這張照片'}
                       disabled={busy}
-                      onPress={() => analyze(photoBase64)}
+                      onPress={() => analyze(photo.full)}
                     />
                   )}
                 </View>

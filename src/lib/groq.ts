@@ -59,7 +59,12 @@ function extractJson(text: string): unknown {
   return JSON.parse(text.slice(start, end + 1));
 }
 
-export async function suggestTagsForPhoto(base64: string): Promise<TagSuggestion> {
+/**
+ * @param dataUri A `data:image/jpeg;base64,…` URI, exactly as lib/compress-photo.ts
+ *   returns it — the same string the app renders, so there is no second encoding
+ *   step that could disagree with what the user sees.
+ */
+export async function suggestTagsForPhoto(dataUri: string): Promise<TagSuggestion> {
   const model = process.env.EXPO_PUBLIC_GROQ_VISION_MODEL || DEFAULT_MODEL;
 
   const response = await fetch(GROQ_API_URL, {
@@ -76,7 +81,7 @@ export async function suggestTagsForPhoto(base64: string): Promise<TagSuggestion
           role: 'user',
           content: [
             { type: 'text', text: SYSTEM_PROMPT },
-            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64}` } },
+            { type: 'image_url', image_url: { url: dataUri } },
           ],
         },
       ],

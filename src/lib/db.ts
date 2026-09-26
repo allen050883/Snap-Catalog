@@ -1,7 +1,5 @@
 import {
-  addDoc,
   collection,
-  deleteDoc,
   doc,
   DocumentData,
   getDoc,
@@ -11,7 +9,7 @@ import {
   QueryDocumentSnapshot,
   serverTimestamp,
   Timestamp,
-  updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 import { auth, db } from '@/lib/firebase';
@@ -26,23 +24,42 @@ export type Item = {
   type: string | null;
   /** Slug from constants/item-types.ts STATUSES. */
   status: string;
-  /** Free text: "M", "坐姿", "12 cm". Same series in another size is the classic duplicate. */
+  /** Free text: "M", "坐姿", "12 公分". Same series in another size is the classic duplicate. */
   size: string | null;
   quantity: number;
   color: string | null;
   notes: string | null;
-  photoUri: string | null;
+  /**
+   * Small image shown in the grid and as the detail screen's first paint. A data URI
+   * for a captured photo, or a remote URL for the sample rows. The full-size photo
+   * lives in its own document — see `photosCollection` below.
+   */
+  thumbnail: string | null;
+  /** Whether users/{uid}/photos/{id} exists, so the detail screen knows to fetch it. */
+  hasPhoto: boolean;
   createdAt: number;
 };
 
-export type ItemInput = Omit<Item, 'id' | 'createdAt'>;
+export type ItemInput = Omit<Item, 'id' | 'createdAt' | 'hasPhoto'>;
 export type ItemWithTags = Item & { tags: string[] };
 
-function itemsCollection() {
+function userCollection(name: string) {
   const uid = auth.currentUser?.uid;
   if (!uid) throw new Error('Not signed in');
-  return collection(db, 'users', uid, 'items');
+  return collection(db, 'users', uid, name);
 }
+
+const itemsCollection = () => userCollection('items');
+
+/**
+ * Full-size photos, keyed by their item's id.
+ *
+ * They are kept out of the item document because the list screen reads every item
+ * it shows: with a full photo on each one, opening the list re-downloaded the whole
+ * catalog's images — on the order of 20 MB at a hundred items. Sharing the item's id
+ * means fetching one needs no query, just a document read.
+ */
+const photosCollection = () => userCollection('photos');
 
 function fromDoc(snap: QueryDocumentSnapshot<DocumentData>): ItemWithTags {
   const data = snap.data();
@@ -58,7 +75,8 @@ function fromDoc(snap: QueryDocumentSnapshot<DocumentData>): ItemWithTags {
     quantity: typeof data.quantity === 'number' && data.quantity > 0 ? data.quantity : 1,
     color: data.color ?? null,
     notes: data.notes ?? null,
-    photoUri: data.photoUri ?? null,
+    thumbnail: data.thumbnail ?? null,
+    hasPhoto: data.hasPhoto === true,
     tags: Array.isArray(data.tags) ? data.tags : [],
     createdAt,
   };
@@ -68,21 +86,59 @@ function uniqueTags(tags: string[]): string[] {
   return [...new Set(tags.map((t) => t.trim()).filter(Boolean))];
 }
 
-export async function createItem(input: ItemInput, tags: string[]): Promise<string> {
-  const docRef = await addDoc(itemsCollection(), {
+/**
+ * @param fullPhoto Full-size data URI to store alongside the item. Omit to leave any
+ *   existing photo document untouched on update, or to create an item without one.
+ */
+export async function createItem(input: ItemInput, tags: string[], fullPhoto?: string): Promise<string> {
+  // The id is generated client-side so the item and its photo can be written in one
+  // batch — otherwise an interrupted save could leave a photo with no item.
+  const ref = doc(itemsCollection());
+  const batch = writeBatch(db);
+  batch.set(ref, {
     ...input,
+    hasPhoto: Boolean(fullPhoto),
     tags: uniqueTags(tags),
     createdAt: serverTimestamp(),
   });
-  return docRef.id;
+  if (fullPhoto) {
+    batch.set(doc(photosCollection(), ref.id), { base64: fullPhoto, createdAt: serverTimestamp() });
+  }
+  await batch.commit();
+  return ref.id;
 }
 
-export async function updateItem(id: string, input: ItemInput, tags: string[]): Promise<void> {
-  await updateDoc(doc(itemsCollection(), id), { ...input, tags: uniqueTags(tags) });
+export async function updateItem(
+  id: string,
+  input: ItemInput,
+  tags: string[],
+  fullPhoto?: string,
+): Promise<void> {
+  const batch = writeBatch(db);
+  const fields: Record<string, unknown> = { ...input, tags: uniqueTags(tags) };
+  if (fullPhoto) {
+    fields.hasPhoto = true;
+    batch.set(doc(photosCollection(), id), { base64: fullPhoto, createdAt: serverTimestamp() });
+  }
+  batch.update(doc(itemsCollection(), id), fields);
+  await batch.commit();
 }
 
 export async function deleteItem(id: string): Promise<void> {
-  await deleteDoc(doc(itemsCollection(), id));
+  const batch = writeBatch(db);
+  batch.delete(doc(itemsCollection(), id));
+  // Unconditional: deleting a document that was never created is a no-op in
+  // Firestore, and this way a stale hasPhoto flag can't orphan an image.
+  batch.delete(doc(photosCollection(), id));
+  await batch.commit();
+}
+
+/** Full-size photo for an item, or null if it has none. */
+export async function getItemPhoto(id: string): Promise<string | null> {
+  const snap = await getDoc(doc(photosCollection(), id));
+  if (!snap.exists()) return null;
+  const base64 = snap.data().base64;
+  return typeof base64 === 'string' ? base64 : null;
 }
 
 export async function listItems(search?: string): Promise<ItemWithTags[]> {
@@ -130,6 +186,6 @@ export const seedMockItems: () => Promise<void> = __DEV__
 export const clearAllItems: () => Promise<void> = __DEV__
   ? async () => {
       const snap = await getDocs(itemsCollection());
-      await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
+      await Promise.all(snap.docs.map((d) => deleteItem(d.id)));
     }
   : async () => {};
