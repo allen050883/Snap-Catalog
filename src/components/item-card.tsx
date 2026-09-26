@@ -6,11 +6,20 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { ItemWithTags } from '@/lib/db';
 
-export function ItemCard({ item, onPress }: { item: ItemWithTags; onPress: () => void }) {
+export function ItemCard({
+  item,
+  themeNames,
+  onPress,
+}: {
+  item: ItemWithTags;
+  /** Display names for item.themeIds, resolved by the caller. */
+  themeNames: string[];
+  onPress: () => void;
+}) {
   const theme = useTheme();
   // "×" rather than "·" between themes: it reads as a collaboration, which is what a
   // multi-theme item always is.
-  const subtitle = [item.themes.join(' × '), item.series].filter(Boolean).join(' · ');
+  const subtitle = [themeNames.join(' × '), item.series].filter(Boolean).join(' · ');
   const label = typeLabel(item.type);
 
   return (

@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -16,7 +16,8 @@ import { ThemedView } from '@/components/themed-view';
 import { TypePicker } from '@/components/type-picker';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { deleteItem, getItem, getItemPhoto, ItemWithTags, listItems, updateItem } from '@/lib/db';
+import { deleteItem, getItem, getItemPhoto, ItemWithTags, updateItem } from '@/lib/db';
+import { createTheme, listThemes, type Theme } from '@/lib/themes';
 
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -26,7 +27,7 @@ export default function ItemDetailScreen() {
   const [item, setItem] = useState<ItemWithTags | null>(null);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState('');
-  const [themes, setThemes] = useState<string[]>([]);
+  const [themeIds, setThemeIds] = useState<string[]>([]);
   const [series, setSeries] = useState('');
   const [type, setType] = useState('');
   const [status, setStatus] = useState('owned');
@@ -45,12 +46,19 @@ export default function ItemDetailScreen() {
   // rather than holding the whole page back on an image.
   const [fullPhoto, setFullPhoto] = useState<string | null>(null);
 
-  const [knownThemes, setKnownThemes] = useState<string[]>([]);
-  useEffect(() => {
-    listItems()
-      .then((items) => setKnownThemes([...new Set(items.flatMap((i) => i.themes))].sort()))
-      .catch(() => setKnownThemes([]));
+  const [themes, setThemes] = useState<Theme[]>([]);
+  const refreshThemes = useCallback(() => {
+    listThemes()
+      .then(setThemes)
+      .catch(() => setThemes([]));
   }, []);
+  useEffect(refreshThemes, [refreshThemes]);
+
+  async function handleCreateTheme(name: string): Promise<string> {
+    const id = await createTheme(name);
+    refreshThemes();
+    return id;
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -74,7 +82,7 @@ export default function ItemDetailScreen() {
         if (!loaded) return;
         setItem(loaded);
         setName(loaded.name);
-        setThemes(loaded.themes);
+        setThemeIds(loaded.themeIds);
         setSeries(loaded.series ?? '');
         setType(loaded.type ?? '');
         setStatus(loaded.status);
@@ -101,7 +109,7 @@ export default function ItemDetailScreen() {
         item.id,
         {
           name: name.trim(),
-          themes: themes.map((t) => t.trim()).filter(Boolean),
+          themeIds,
           series: series.trim() || null,
           type: type.trim() || null,
           status,
@@ -176,7 +184,12 @@ export default function ItemDetailScreen() {
                 <ThemedText type="small" themeColor="textSecondary">
                   主題
                 </ThemedText>
-                <ThemeSelector value={themes} suggestions={knownThemes} onChange={setThemes} />
+                <ThemeSelector
+                  value={themeIds}
+                  themes={themes}
+                  onChange={setThemeIds}
+                  onCreate={handleCreateTheme}
+                />
               </View>
 
               <FormField label="系列" value={series} onChangeText={setSeries} />

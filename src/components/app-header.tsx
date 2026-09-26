@@ -10,7 +10,15 @@ import { useTheme } from '@/hooks/use-theme';
 // squeeze everything else out.
 const COMPACT_WIDTH = 600;
 
-export function AppHeader({ email, onSignOut }: { email: string | null; onSignOut: () => void }) {
+export function AppHeader({
+  email,
+  onManageThemes,
+  onSignOut,
+}: {
+  email: string | null;
+  onManageThemes: () => void;
+  onSignOut: () => void;
+}) {
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const compact = width < COMPACT_WIDTH;
@@ -30,7 +38,15 @@ export function AppHeader({ email, onSignOut }: { email: string | null; onSignOu
             {email}
           </ThemedText>
         )}
-        <Pressable onPress={onSignOut} hitSlop={8} style={styles.signOut}>
+        <Pressable onPress={onManageThemes} hitSlop={8} style={styles.action}>
+          <Icon name="settings" size={16} color={theme.textSecondary} />
+          {!compact && (
+            <ThemedText type="small" themeColor="textSecondary">
+              主題管理
+            </ThemedText>
+          )}
+        </Pressable>
+        <Pressable onPress={onSignOut} hitSlop={8} style={styles.action}>
           <Icon name="logout" size={16} color={theme.textSecondary} />
           <ThemedText type="small" themeColor="textSecondary">
             登出
@@ -61,5 +77,5 @@ const styles = StyleSheet.create({
   },
   right: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, flexShrink: 1 },
   email: { flexShrink: 1 },
-  signOut: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
+  action: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
 });

@@ -1,6 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -23,7 +23,8 @@ import { Spacing } from '@/constants/theme';
 // import { useBonusAnalysisAd } from '@/hooks/use-bonus-analysis-ad';
 import { useTheme } from '@/hooks/use-theme';
 import { type CompressedPhoto, compressPhoto } from '@/lib/compress-photo';
-import { createItem, listItems } from '@/lib/db';
+import { createItem } from '@/lib/db';
+import { createTheme, findThemeByName, listThemes, type Theme } from '@/lib/themes';
 import { suggestTagsForPhoto } from '@/lib/groq';
 import { FREE_DAILY_LIMIT, getUsageToday, recordAnalysisUsed, UsageToday } from '@/lib/usage';
 
@@ -43,7 +44,7 @@ export default function AddItemScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const [name, setName] = useState('');
-  const [themes, setThemes] = useState<string[]>([]);
+  const [themeIds, setThemeIds] = useState<string[]>([]);
   const [series, setSeries] = useState('');
   const [type, setType] = useState('');
   const [status, setStatus] = useState('owned');
@@ -55,12 +56,22 @@ export default function AddItemScreen() {
 
   // Offered as one-tap chips in the theme picker so an existing theme is never
   // retyped — that is what stops "拉拉熊" splitting into near-identical spellings.
-  const [knownThemes, setKnownThemes] = useState<string[]>([]);
-  useEffect(() => {
-    listItems()
-      .then((items) => setKnownThemes([...new Set(items.flatMap((item) => item.themes))].sort()))
-      .catch(() => setKnownThemes([]));
+  const [themes, setThemes] = useState<Theme[]>([]);
+  const refreshThemes = useCallback(() => {
+    listThemes()
+      .then(setThemes)
+      .catch(() => setThemes([]));
   }, []);
+  useEffect(refreshThemes, [refreshThemes]);
+
+  async function handleCreateTheme(name: string): Promise<string> {
+    const id = await createTheme(name);
+    refreshThemes();
+    return id;
+  }
+
+  /** Theme the AI named but that isn't in the catalog yet — offered, never auto-created. */
+  const [suggestedTheme, setSuggestedTheme] = useState<string | null>(null);
 
   const [quota, setQuota] = useState<UsageToday | null>(null);
   useEffect(() => {
@@ -90,7 +101,19 @@ export default function AddItemScreen() {
     try {
       const suggestion = await suggestTagsForPhoto(dataUri);
       setName(suggestion.name);
-      setThemes(suggestion.themes);
+
+      // Match the model's answer against existing themes and their aliases before
+      // touching the list. It names an IP for anything character-shaped — confidently,
+      // and sometimes wrongly — so an unmatched name is offered, never created.
+      const matched: string[] = [];
+      let unmatched: string | null = null;
+      for (const themeName of suggestion.themes) {
+        const found = await findThemeByName(themeName);
+        if (found) matched.push(found.id);
+        else if (!unmatched) unmatched = themeName;
+      }
+      setThemeIds(matched);
+      setSuggestedTheme(unmatched);
       setSeries(suggestion.series ?? '');
       setType(suggestion.type ?? '');
       setSize(suggestion.size ?? '');
@@ -149,7 +172,7 @@ export default function AddItemScreen() {
       await createItem(
         {
           name: name.trim(),
-          themes: themes.map((t) => t.trim()).filter(Boolean),
+          themeIds,
           series: series.trim() || null,
           type: type.trim() || null,
           status,
@@ -250,7 +273,24 @@ export default function AddItemScreen() {
                 <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
                   聯名商品可以選兩個，之後從任一邊都找得到
                 </ThemedText>
-                <ThemeSelector value={themes} suggestions={knownThemes} onChange={setThemes} />
+                {suggestedTheme && (
+                  <InlineBanner
+                    message={`AI 認為這是「${suggestedTheme}」，你的主題清單裡還沒有。`}
+                    actionLabel="建立這個主題"
+                    onAction={async () => {
+                      const id = await handleCreateTheme(suggestedTheme);
+                      setThemeIds((ids) => [...ids, id]);
+                      setSuggestedTheme(null);
+                    }}
+                    onDismiss={() => setSuggestedTheme(null)}
+                  />
+                )}
+                <ThemeSelector
+                  value={themeIds}
+                  themes={themes}
+                  onChange={setThemeIds}
+                  onCreate={handleCreateTheme}
+                />
               </View>
 
               <FormField label="系列" value={series} onChangeText={setSeries} placeholder="例：草莓派對系列" />

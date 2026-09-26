@@ -48,6 +48,7 @@ export default function RootLayout() {
           <Stack.Screen name="index" options={{ title: 'Snap Catalog', headerShown: false }} />
           <Stack.Screen name="add" options={{ title: '新增收藏', presentation: 'modal' }} />
           <Stack.Screen name="item/[id]" options={{ title: '收藏細節' }} />
+          <Stack.Screen name="themes" options={{ title: '主題管理' }} />
         </Stack>
       )}
     </ThemeProvider>

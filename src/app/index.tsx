@@ -17,7 +17,8 @@ import { ITEM_TYPES } from '@/constants/item-types';
 import { Spacing } from '@/constants/theme';
 import { useAuthUser } from '@/hooks/use-auth-user';
 import { useTheme } from '@/hooks/use-theme';
-import { clearAllItems, ItemWithTags, listItems, seedMockItems } from '@/lib/db';
+import { clearAllItems, itemMatches, ItemWithTags, listItems, seedMockItems } from '@/lib/db';
+import { listThemes, type Theme } from '@/lib/themes';
 import { auth } from '@/lib/firebase';
 
 export default function ItemListScreen() {
@@ -31,16 +32,24 @@ export default function ItemListScreen() {
   const [themeFilter, setThemeFilter] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [items, setItems] = useState<ItemWithTags[]>([]);
+  const [themes, setThemes] = useState<Theme[]>([]);
   const [seeding, setSeeding] = useState(false);
 
-  const reload = useCallback((search: string) => {
-    listItems(search).then(setItems);
+  // Items store theme ids, so the names shown on cards and matched by the search box
+  // come from here.
+  const themeName = useCallback(
+    (id: string) => themes.find((t) => t.id === id)?.name ?? '',
+    [themes],
+  );
+
+  const reload = useCallback(() => {
+    listItems().then(setItems);
+    listThemes().then(setThemes);
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      reload(query);
-      // eslint-disable-next-line react-hooks/exhaustive-deps
+      reload();
     }, [reload]),
   );
 
@@ -51,9 +60,11 @@ export default function ItemListScreen() {
   // Only offer filters for values actually present, so no row advertises a bucket
   // that would always come back empty.
   const themeOptions: FilterOption[] = useMemo(() => {
-    const present = new Set(inStatus.flatMap((item) => item.themes));
-    return [...present].sort().map((name) => ({ value: name, label: name }));
-  }, [inStatus]);
+    const present = new Set(inStatus.flatMap((item) => item.themeIds));
+    return themes
+      .filter((t) => present.has(t.id))
+      .map((t) => ({ value: t.id, label: t.name }));
+  }, [inStatus, themes]);
 
   const typeOptions: FilterOption[] = useMemo(() => {
     const present = new Set(inStatus.map((item) => item.type).filter(Boolean));
@@ -64,10 +75,11 @@ export default function ItemListScreen() {
     () =>
       inStatus.filter(
         (item) =>
-          (!themeFilter || item.themes.includes(themeFilter)) &&
-          (!typeFilter || item.type === typeFilter),
+          (!themeFilter || item.themeIds.includes(themeFilter)) &&
+          (!typeFilter || item.type === typeFilter) &&
+          itemMatches(item, query, item.themeIds.map(themeName)),
       ),
-    [inStatus, themeFilter, typeFilter],
+    [inStatus, themeFilter, typeFilter, query, themeName],
   );
 
   const filtering = Boolean(query || themeFilter || typeFilter);
@@ -76,7 +88,6 @@ export default function ItemListScreen() {
     setQuery('');
     setThemeFilter(null);
     setTypeFilter(null);
-    reload('');
   }
 
   // Development only — both helpers are no-ops in a release build (see lib/db.ts).
@@ -84,7 +95,7 @@ export default function ItemListScreen() {
     setSeeding(true);
     try {
       await seedMockItems();
-      reload(query);
+      reload();
     } finally {
       setSeeding(false);
     }
@@ -94,7 +105,7 @@ export default function ItemListScreen() {
     setSeeding(true);
     try {
       await clearAllItems();
-      reload(query);
+      reload();
     } finally {
       setSeeding(false);
     }
@@ -106,7 +117,11 @@ export default function ItemListScreen() {
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        <AppHeader email={user?.email ?? user?.displayName ?? null} onSignOut={() => signOut(auth)} />
+        <AppHeader
+          email={user?.email ?? user?.displayName ?? null}
+          onManageThemes={() => router.push('/themes')}
+          onSignOut={() => signOut(auth)}
+        />
 
         <ScreenContainer>
           <View style={styles.header}>
@@ -128,10 +143,7 @@ export default function ItemListScreen() {
               <Icon name="search" size={18} color={theme.textSecondary} />
               <TextInput
                 value={query}
-                onChangeText={(text) => {
-                  setQuery(text);
-                  reload(text);
-                }}
+                onChangeText={setQuery}
                 placeholder="搜尋名稱、主題、系列、顏色或標籤"
                 placeholderTextColor={theme.textSecondary}
                 style={[styles.searchInput, { color: theme.text }]}
@@ -178,7 +190,13 @@ export default function ItemListScreen() {
                 />
               )
             }
-            renderItem={({ item }) => <ItemCard item={item} onPress={() => router.push(`/item/${item.id}`)} />}
+            renderItem={({ item }) => (
+              <ItemCard
+                item={item}
+                themeNames={item.themeIds.map(themeName).filter(Boolean)}
+                onPress={() => router.push(`/item/${item.id}`)}
+              />
+            )}
           />
 
           {__DEV__ && items.length > 0 && (

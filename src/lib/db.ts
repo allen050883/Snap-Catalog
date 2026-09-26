@@ -17,8 +17,12 @@ import { auth, db } from '@/lib/firebase';
 export type Item = {
   id: string;
   name: string;
-  /** Multi-valued so a collaboration (拉拉熊 × 三麗鷗) is findable under either. */
-  themes: string[];
+  /**
+   * Ids into users/{uid}/themes. Multi-valued so a collaboration (拉拉熊 × 三麗鷗)
+   * is findable under either. Ids rather than names so renaming a theme or adding an
+   * alias updates every item at once — see lib/themes.ts.
+   */
+  themeIds: string[];
   series: string | null;
   /** Slug from constants/item-types.ts. */
   type: string | null;
@@ -67,7 +71,7 @@ function fromDoc(snap: QueryDocumentSnapshot<DocumentData>): ItemWithTags {
   return {
     id: snap.id,
     name: data.name,
-    themes: Array.isArray(data.themes) ? data.themes : [],
+    themeIds: Array.isArray(data.themeIds) ? data.themeIds : [],
     series: data.series ?? null,
     type: data.type ?? null,
     status: data.status ?? 'owned',
@@ -141,18 +145,28 @@ export async function getItemPhoto(id: string): Promise<string | null> {
   return typeof base64 === 'string' ? base64 : null;
 }
 
-export async function listItems(search?: string): Promise<ItemWithTags[]> {
+/**
+ * Every item, newest first. Searching and filtering happen on the caller's side: an
+ * item stores theme *ids*, so matching a typed "拉拉熊" needs the theme list, which
+ * the list screen already holds. A personal catalog is small enough that filtering
+ * in memory beats maintaining composite indexes for it.
+ */
+export async function listItems(): Promise<ItemWithTags[]> {
   const snap = await getDocs(query(itemsCollection(), orderBy('createdAt', 'desc')));
-  const items = snap.docs.map(fromDoc);
+  return snap.docs.map(fromDoc);
+}
 
-  const needle = search?.trim().toLowerCase();
-  if (!needle) return items;
-
-  return items.filter((item) =>
-    [item.name, item.series, item.type, item.size, item.color, ...item.themes, ...item.tags]
-      .filter((field): field is string => Boolean(field))
-      .some((field) => field.toLowerCase().includes(needle)),
-  );
+/**
+ * Whether an item matches a free-text search.
+ *
+ * @param themeNames Display names for the item's themeIds, resolved by the caller.
+ */
+export function itemMatches(item: ItemWithTags, needle: string, themeNames: string[]): boolean {
+  const q = needle.trim().toLowerCase();
+  if (!q) return true;
+  return [item.name, item.series, item.type, item.size, item.color, ...themeNames, ...item.tags]
+    .filter((field): field is string => Boolean(field))
+    .some((field) => field.toLowerCase().includes(q));
 }
 
 export async function getItem(id: string): Promise<ItemWithTags | null> {
@@ -173,11 +187,24 @@ export async function getItem(id: string): Promise<ItemWithTags | null> {
  */
 export const seedMockItems: () => Promise<void> = __DEV__
   ? async () => {
-      const { MOCK_ITEMS } = await import('@/lib/mock-data');
+      const { MOCK_ITEMS, MOCK_THEMES } = await import('@/lib/mock-data');
+      const { createTheme, listThemes } = await import('@/lib/themes');
+
+      // Themes first: items reference them by id. Reuse any that already exist so
+      // seeding twice doesn't produce a second "拉拉熊".
+      const existing = await listThemes();
+      const idByName = new Map(existing.map((t) => [t.name, t.id]));
+      for (const { name, aliases } of MOCK_THEMES) {
+        if (!idByName.has(name)) idByName.set(name, await createTheme(name, aliases));
+      }
+
       // Sequential rather than Promise.all: createItem stamps createdAt with
       // serverTimestamp(), and writing them in order keeps the list order predictable.
-      for (const { item, tags } of MOCK_ITEMS) {
-        await createItem(item, tags);
+      for (const { item, themeNames, tags } of MOCK_ITEMS) {
+        const themeIds = themeNames
+          .map((name) => idByName.get(name))
+          .filter((id): id is string => Boolean(id));
+        await createItem({ ...item, themeIds }, tags);
       }
     }
   : async () => {};
