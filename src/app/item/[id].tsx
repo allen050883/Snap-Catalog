@@ -1,3 +1,4 @@
+import Head from 'expo-router/head';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -176,6 +177,9 @@ export default function ItemDetailScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      <Head>
+        <title>收藏細節 · SnapLocker</title>
+      </Head>
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
         <ScreenContainer>
           <ScrollView contentContainerStyle={styles.scroll}>

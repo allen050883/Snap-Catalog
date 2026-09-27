@@ -1,3 +1,4 @@
+import Head from 'expo-router/head';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
 import { useCallback, useMemo, useState } from 'react';
@@ -136,6 +137,10 @@ export default function ItemListScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      <Head>
+        <title>SnapLocker 藏寶盒</title>
+        <meta name="description" content="收納此刻，捕捉心動。拍照建檔你的收藏，買之前先查有沒有重複。" />
+      </Head>
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <AppHeader
           email={user?.email ?? user?.displayName ?? null}

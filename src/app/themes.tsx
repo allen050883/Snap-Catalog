@@ -1,3 +1,4 @@
+import Head from 'expo-router/head';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -55,6 +56,9 @@ export default function ThemesScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      <Head>
+        <title>主題管理 · SnapLocker</title>
+      </Head>
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
         <ScreenContainer>
           <ScrollView contentContainerStyle={styles.scroll}>

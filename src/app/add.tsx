@@ -1,3 +1,4 @@
+import Head from 'expo-router/head';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -272,6 +273,9 @@ export default function AddItemScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      <Head>
+        <title>新增收藏 · SnapLocker</title>
+      </Head>
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
         <ScreenContainer>
           <ScrollView contentContainerStyle={styles.scroll}>

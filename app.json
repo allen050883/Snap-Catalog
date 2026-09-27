@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Snap Catalog",
+    "name": "SnapLocker",
     "slug": "snap-catalog",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -11,8 +11,8 @@
       "bundleIdentifier": "com.allen050883.snapcatalog",
       "icon": "./assets/expo.icon",
       "infoPlist": {
-        "NSCameraUsageDescription": "Snap Catalog needs camera access to photograph your collectibles.",
-        "NSPhotoLibraryUsageDescription": "Snap Catalog needs photo library access to pick photos of your collectibles."
+        "NSCameraUsageDescription": "SnapLocker 需要相機權限才能拍攝你的收藏品。",
+        "NSPhotoLibraryUsageDescription": "SnapLocker 需要相簿權限才能選擇收藏品的照片。"
       }
     },
     "android": {
@@ -35,8 +35,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Snap Catalog needs photo library access to pick photos of your collectibles.",
-          "cameraPermission": "Snap Catalog needs camera access to photograph your collectibles."
+          "photosPermission": "SnapLocker 需要相簿權限才能選擇收藏品的照片。",
+          "cameraPermission": "SnapLocker 需要相機權限才能拍攝你的收藏品。"
         }
       ],
       [
