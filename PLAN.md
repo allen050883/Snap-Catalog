@@ -29,6 +29,16 @@
 
 `users/{uid}/series`，item 改存 `seriesId`。重複偵測從字串比對變成 id 比對，錯字不再造成漏報。`series.year` 欄位已在資料層，但表單還沒有輸入的地方。
 
+### 1.4 把 Groq 呼叫搬到伺服器端
+
+`EXPO_PUBLIC_GROQ_API_KEY` 會明文內嵌進打包後的 JS。網站一公開，任何訪客都能取走那把 key。收藏資料不受影響（Firestore 規則綁 uid），但 Groq 額度會被白嫖。
+
+同一件事也讓每日 5 次的額度形同虛設 —— 它存在瀏覽器 localStorage，使用者自己改得掉。額度要算在伺服器上才擋得住。
+
+做法輪廓與 Cloudflare Workers 的免費額度見 [DNS.md](DNS.md) 最後一節。
+
+**在網址對外公開之前應該先做完這項。**
+
 ## 2. SPEC 已定義但未實作
 
 | 欄位 | 位置 | 用途 |
@@ -77,4 +87,5 @@ SPEC §8 列的開放問題，會影響畫面結構：
 
 - [SPEC.md](SPEC.md) — 目標設計。標示 **（未實作）** 的項目與本檔第 1、2 節對應
 - [README.md](README.md) — 目前實作與環境設定
+- [DNS.md](DNS.md) — 部署到 Cloudflare 與網域設定
 - 本檔 — 差距清單

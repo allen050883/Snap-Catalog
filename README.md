@@ -4,7 +4,7 @@
 
 介面是繁體中文的，AI 辨識出來的內容也是。
 
-設計規格見 [SPEC.md](SPEC.md)，還沒做的事見 [PLAN.md](PLAN.md)。
+設計規格見 [SPEC.md](SPEC.md)，還沒做的事見 [PLAN.md](PLAN.md)，上線部署見 [DNS.md](DNS.md)。
 
 ## 技術組成
 

@@ -1,0 +1,11 @@
+# Cloudflare Pages routing. Copied verbatim into the export by `expo export`
+# (anything in public/ is), so it stays in version control instead of being a step
+# someone has to remember after every build.
+
+# expo-router writes a dynamic route to a literal file called `item/[id].html`, so a
+# real URL like /item/abc123 matches nothing on disk. 200 rewrites it without
+# changing the address bar — a 301 here would put the brackets in the URL.
+/item/*  /item/%5Bid%5D.html  200
+
+# Everything else that doesn't exist.
+/*  /+not-found.html  404

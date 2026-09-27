@@ -46,3 +46,7 @@ example
 # Figma Make ships the prototype both extracted and zipped — the zip is the same
 # files again, so keep the readable copy and leave the archive out of the repo.
 figma/snap-catalog-figma.zip
+
+# Web build output. Contains the bundled EXPO_PUBLIC_* values in plain text,
+# the Groq key among them — see DNS.md.
+dist/
