@@ -1,5 +1,5 @@
 import Head from 'expo-router/head';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,6 +17,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { TypePicker } from '@/components/type-picker';
 import { Spacing } from '@/constants/theme';
+import { useCloseScreen } from '@/hooks/use-close-screen';
 import { useTheme } from '@/hooks/use-theme';
 import { deleteItem, getItem, getItemPhoto, ItemWithTags, updateItem } from '@/lib/db';
 import { createSeries, listSeries, type Series } from '@/lib/series';
@@ -24,7 +25,7 @@ import { createTheme, listThemes, type Theme } from '@/lib/themes';
 
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const router = useRouter();
+  const close = useCloseScreen();
   const theme = useTheme();
 
   const [item, setItem] = useState<ItemWithTags | null>(null);
@@ -138,7 +139,7 @@ export default function ItemDetailScreen() {
         },
         tags,
       );
-      router.back();
+      close();
     } catch (err) {
       setError(`儲存失敗：${err instanceof Error ? err.message : String(err)}`);
       setSaving(false);
@@ -149,7 +150,7 @@ export default function ItemDetailScreen() {
     if (!item) return;
     try {
       await deleteItem(item.id);
-      router.back();
+      close();
     } catch (err) {
       setConfirmingDelete(false);
       setError(`刪除失敗：${err instanceof Error ? err.message : String(err)}`);

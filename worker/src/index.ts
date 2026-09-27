@@ -84,6 +84,13 @@ export default {
     }
 
     const url = new URL(request.url);
+    // Without this the request goes out as `Bearer undefined` and Groq answers
+    // "Invalid API Key", which reads like a wrong key rather than a missing one.
+    if (!env.GROQ_API_KEY) {
+      console.error('GROQ_API_KEY is not set: `wrangler secret put GROQ_API_KEY`, or .dev.vars locally');
+      return json({ error: 'AI 辨識服務尚未設定完成' }, 503, cors);
+    }
+
     const limit = Number(env.DAILY_LIMIT ?? DEFAULT_LIMIT) || DEFAULT_LIMIT;
 
     // 1. Who is asking. Without this the endpoint is exactly as open as a leaked key.

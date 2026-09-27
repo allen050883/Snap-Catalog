@@ -15,7 +15,7 @@ GROQ_MODEL = "qwen/qwen3.8-27b"
 # then paste the id it prints below.
 [[kv_namespaces]]
 binding = "USAGE"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "local-development-placeholder"
 
 # GROQ_API_KEY is deliberately absent: it is a secret, set with
 #   npx wrangler secret put GROQ_API_KEY

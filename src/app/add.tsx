@@ -1,6 +1,5 @@
 import Head from 'expo-router/head';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,6 +23,7 @@ import { Spacing } from '@/constants/theme';
 // plus reinstalling react-native-google-mobile-ads + expo-dev-client and restoring
 // the plugin entry in app.json. See README's "Daily AI quota + rewarded ads" section.
 // import { useBonusAnalysisAd } from '@/hooks/use-bonus-analysis-ad';
+import { useCloseScreen } from '@/hooks/use-close-screen';
 import { useTheme } from '@/hooks/use-theme';
 import { type CompressedPhoto, compressPhoto } from '@/lib/compress-photo';
 import {
@@ -46,7 +46,7 @@ import {
 import { auth } from '@/lib/firebase';
 
 export default function AddItemScreen() {
-  const router = useRouter();
+  const close = useCloseScreen();
   const theme = useTheme();
 
   // Data URIs (not file:// URIs) so this works identically on native and web, and so
@@ -256,7 +256,7 @@ export default function AddItemScreen() {
         tags,
         photo?.full,
       );
-      router.back();
+      close();
     } catch (err) {
       setError(`儲存失敗：${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -282,7 +282,7 @@ export default function AddItemScreen() {
     setError(null);
     try {
       await action();
-      router.back();
+      close();
     } catch (err) {
       setError(`${failure}：${err instanceof Error ? err.message : String(err)}`);
       setSaving(false);
@@ -313,7 +313,7 @@ export default function AddItemScreen() {
                 seriesList.find((s) => s.id === item.seriesId)?.name ?? null
               }
               onKeepAdding={() => setDuplicateDismissed(true)}
-              onDiscard={() => router.back()}
+              onDiscard={() => close()}
               onIncrement={(id) => resolveDuplicate(() => incrementQuantity(id), '更新數量失敗')}
               onMarkOwned={(id) => resolveDuplicate(() => setItemStatus(id, 'owned'), '更新狀態失敗')}
             />

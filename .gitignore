@@ -50,3 +50,6 @@ figma/snap-catalog-figma.zip
 # Web build output. Contains the bundled EXPO_PUBLIC_* values in plain text,
 # the Groq key among them — see DNS.md.
 dist/
+
+# Cloudflare Worker secrets for local development.
+worker/.dev.vars

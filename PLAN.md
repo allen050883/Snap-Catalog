@@ -68,6 +68,14 @@ src/hooks/use-google-sign-in.ts:41    setState synchronously within an effect
 
 兩個都在這輪改動之前就存在。`use-google-sign-in.ts` 是原生版的登入 hook（web 版走 `use-google-sign-in.web.ts` 的 `signInWithPopup`，沒有這個問題），所以**只會在原生實機上跑到**，目前 Android 登入本來就不能用，修它之前先處理 3.1 比較有意義。
 
+## 3.4 重複的 Firestore 讀取
+
+清單頁每次獲得焦點就重抓 items、themes、series；新增頁和細節頁各自又抓一次。光是「首頁 → 新增 → 返回」就會打 Firestore 六次，而且 items 帶著所有縮圖。
+
+**不影響首次載入速度**（那是開發模式 bundle 大小造成的，正式版 2.2MB vs 開發 6.7MB），只影響畫面間切換的流暢度。收藏量小的時候感覺不出來，量大了會開始明顯。
+
+要修的話是加一層共用的資料快取，讓三個畫面共用同一份 themes / series / items，並且只在真的變動後才重抓。
+
 ## 4. 待決定
 
 SPEC §8 列的開放問題，會影響畫面結構：
