@@ -15,7 +15,10 @@ export function LoginScreen() {
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <ThemedText type="title" style={styles.title}>
-          Snap Catalog
+          SnapLocker
+        </ThemedText>
+        <ThemedText type="small" themeColor="textSecondary" style={styles.subtitle}>
+          藏寶盒 · 收納此刻，捕捉心動
         </ThemedText>
         <ThemedText type="small" themeColor="textSecondary" style={styles.subtitle}>
           用 Google 帳號登入，你的收藏會跟著帳號走，換手機也不會不見。

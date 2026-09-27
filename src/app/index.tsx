@@ -139,6 +139,7 @@ export default function ItemListScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <AppHeader
           email={user?.email ?? user?.displayName ?? null}
+          onPressHome={() => router.navigate('/')}
           onManageThemes={() => router.push('/themes')}
           onSignOut={() => signOut(auth)}
         />
@@ -147,10 +148,10 @@ export default function ItemListScreen() {
           <View style={styles.header}>
             <View style={styles.titleRow}>
               <View style={styles.titleBlock}>
+                <ThemedText type="subtitle">藏寶盒</ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
-                  買之前，先查一下
+                  收納此刻，捕捉心動
                 </ThemedText>
-                <ThemedText type="subtitle">我的收藏</ThemedText>
               </View>
               <View style={[styles.countPill, { backgroundColor: theme.backgroundElement }]}>
                 <ThemedText type="smallBold" themeColor="textSecondary">

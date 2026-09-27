@@ -12,10 +12,12 @@ const COMPACT_WIDTH = 600;
 
 export function AppHeader({
   email,
+  onPressHome,
   onManageThemes,
   onSignOut,
 }: {
   email: string | null;
+  onPressHome: () => void;
   onManageThemes: () => void;
   onSignOut: () => void;
 }) {
@@ -25,12 +27,12 @@ export function AppHeader({
 
   return (
     <View style={[styles.bar, { borderBottomColor: theme.backgroundSelected }]}>
-      <View style={styles.brand}>
+      <Pressable onPress={onPressHome} style={styles.brand} accessibilityRole="link">
         <View style={[styles.mark, { backgroundColor: theme.accent }]}>
           <Icon name="archive" size={18} color={theme.onAccent} />
         </View>
-        {!compact && <ThemedText type="smallBold">Snap Catalog</ThemedText>}
-      </View>
+        {!compact && <ThemedText type="smallBold">SnapLocker</ThemedText>}
+      </Pressable>
 
       <View style={styles.right}>
         {!compact && email && (
