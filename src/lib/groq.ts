@@ -40,6 +40,21 @@ Rules:
 - Do not guess "size" from an image with nothing to judge scale against — null is the better answer.
 - If you cannot confidently determine a field, use null (or an empty array) rather than guessing wildly.`;
 
+/**
+ * The Groq account has no capacity right now.
+ *
+ * Both limits surface as HTTP 429: the per-minute token budget (7000 input tokens
+ * against roughly 1850 per photo, so about three in a row) and the daily one. They
+ * are not worth distinguishing to the person using the app — either way the answer
+ * is to wait or to ask whoever holds the key.
+ */
+export class GroqQuotaError extends Error {
+  constructor() {
+    super('AI 額度不足，請洽詢管理員');
+    this.name = 'GroqQuotaError';
+  }
+}
+
 function getApiKey(): string {
   const key = process.env.EXPO_PUBLIC_GROQ_API_KEY;
   if (!key) {
@@ -87,6 +102,14 @@ export async function suggestTagsForPhoto(dataUri: string): Promise<TagSuggestio
       ],
     }),
   });
+
+  if (response.status === 429) {
+    // Groq's own message is a paragraph of English naming the org and the token
+    // budget — accurate, but not something to put in front of someone holding a
+    // phone in a shop. The distinct type lets the screen show this text as-is
+    // instead of nesting it inside "AI 辨識失敗：".
+    throw new GroqQuotaError();
+  }
 
   if (!response.ok) {
     const body = await response.text();

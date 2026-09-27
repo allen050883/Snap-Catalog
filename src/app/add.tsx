@@ -5,6 +5,7 @@ import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View } fro
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FormField } from '@/components/form-field';
+import { SeriesSelector } from '@/components/series-selector';
 import { Icon } from '@/components/icon';
 import { DuplicateCompare } from '@/components/duplicate-compare';
 import { InlineBanner } from '@/components/inline-banner';
@@ -32,8 +33,9 @@ import {
   listItems,
   setItemStatus,
 } from '@/lib/db';
+import { createSeries, findSeriesByName, listSeries, type Series } from '@/lib/series';
 import { createTheme, findThemeByName, listThemes, type Theme } from '@/lib/themes';
-import { suggestTagsForPhoto } from '@/lib/groq';
+import { GroqQuotaError, suggestTagsForPhoto } from '@/lib/groq';
 import { FREE_DAILY_LIMIT, getUsageToday, recordAnalysisUsed, UsageToday } from '@/lib/usage';
 
 export default function AddItemScreen() {
@@ -53,7 +55,7 @@ export default function AddItemScreen() {
 
   const [name, setName] = useState('');
   const [themeIds, setThemeIds] = useState<string[]>([]);
-  const [series, setSeries] = useState('');
+  const [seriesId, setSeriesId] = useState<string | null>(null);
   const [type, setType] = useState('');
   const [status, setStatus] = useState('owned');
   const [size, setSize] = useState('');
@@ -77,6 +79,23 @@ export default function AddItemScreen() {
     refreshThemes();
     return id;
   }
+
+  const [seriesList, setSeriesList] = useState<Series[]>([]);
+  const refreshSeries = useCallback(() => {
+    listSeries()
+      .then(setSeriesList)
+      .catch(() => setSeriesList([]));
+  }, []);
+  useEffect(refreshSeries, [refreshSeries]);
+
+  async function handleCreateSeries(themeId: string, name: string): Promise<string> {
+    const id = await createSeries(themeId, name);
+    refreshSeries();
+    return id;
+  }
+
+  /** Series the AI named but that doesn't exist yet — offered, never auto-created. */
+  const [suggestedSeries, setSuggestedSeries] = useState<string | null>(null);
 
   /** Theme the AI named but that isn't in the catalog yet — offered, never auto-created. */
   const [suggestedTheme, setSuggestedTheme] = useState<string | null>(null);
@@ -133,7 +152,13 @@ export default function AddItemScreen() {
       }
       setThemeIds(matched);
       setSuggestedTheme(unmatched);
-      setSeries(suggestion.series ?? '');
+
+      // Same rule as themes: a series is only picked when it already exists under
+      // one of the matched themes, otherwise it is offered.
+      const namedSeries = suggestion.series?.trim();
+      const foundSeries = namedSeries ? findSeriesByName(seriesList, matched, namedSeries) : null;
+      setSeriesId(foundSeries?.id ?? null);
+      setSuggestedSeries(foundSeries || !namedSeries ? null : namedSeries);
       setType(suggestion.type ?? '');
       setSize(suggestion.size ?? '');
       setColor(suggestion.color ?? '');
@@ -141,7 +166,13 @@ export default function AddItemScreen() {
       setAnalyzed(true);
       setQuota(await recordAnalysisUsed());
     } catch (err) {
-      setError(`AI 辨識失敗：${err instanceof Error ? err.message : String(err)}`);
+      // A quota message is already written for the reader; anything else is a
+      // developer-facing string that needs the context of what failed.
+      setError(
+        err instanceof GroqQuotaError
+          ? err.message
+          : `AI 辨識失敗：${err instanceof Error ? err.message : String(err)}`,
+      );
     } finally {
       setAnalyzing(false);
     }
@@ -192,7 +223,7 @@ export default function AddItemScreen() {
         {
           name: name.trim(),
           themeIds,
-          series: series.trim() || null,
+          seriesId,
           type: type.trim() || null,
           status,
           size: size.trim() || null,
@@ -220,10 +251,10 @@ export default function AddItemScreen() {
     return findPossibleDuplicates(catalog, {
       name,
       themeIds,
-      series: series || null,
+      seriesId,
       type: type || null,
     });
-  }, [catalog, name, themeIds, series, type, duplicateDismissed]);
+  }, [catalog, name, themeIds, seriesId, type, duplicateDismissed]);
 
   async function resolveDuplicate(action: () => Promise<void>, failure: string) {
     setSaving(true);
@@ -253,6 +284,9 @@ export default function AddItemScreen() {
                 item.themeIds
                   .map((id) => themes.find((th) => th.id === id)?.name)
                   .filter((label): label is string => Boolean(label))
+              }
+              seriesNameFor={(item) =>
+                seriesList.find((s) => s.id === item.seriesId)?.name ?? null
               }
               onKeepAdding={() => setDuplicateDismissed(true)}
               onDiscard={() => router.back()}
@@ -351,7 +385,31 @@ export default function AddItemScreen() {
                 />
               </View>
 
-              <FormField label="系列" value={series} onChangeText={setSeries} placeholder="例：草莓派對系列" />
+              <View style={styles.field}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  系列
+                </ThemedText>
+                {suggestedSeries && (
+                  <InlineBanner
+                    message={`AI 認為這是「${suggestedSeries}」系列，你的清單裡還沒有。`}
+                    actionLabel="建立這個系列"
+                    onAction={async () => {
+                      if (themeIds.length === 0) return;
+                      const id = await handleCreateSeries(themeIds[0], suggestedSeries);
+                      setSeriesId(id);
+                      setSuggestedSeries(null);
+                    }}
+                    onDismiss={() => setSuggestedSeries(null)}
+                  />
+                )}
+                <SeriesSelector
+                  value={seriesId}
+                  series={seriesList}
+                  themeIds={themeIds}
+                  onChange={setSeriesId}
+                  onCreate={handleCreateSeries}
+                />
+              </View>
             </Section>
 
             <Section title="分類與標籤">

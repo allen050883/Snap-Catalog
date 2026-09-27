@@ -26,6 +26,7 @@ export function DuplicateCompare({
   draft,
   matches,
   themeNamesFor,
+  seriesNameFor,
   onKeepAdding,
   onDiscard,
   onIncrement,
@@ -34,6 +35,7 @@ export function DuplicateCompare({
   draft: DraftSummary;
   matches: ItemWithTags[];
   themeNamesFor: (item: ItemWithTags) => string[];
+  seriesNameFor: (item: ItemWithTags) => string | null;
   onKeepAdding: () => void;
   onDiscard: () => void;
   onIncrement: (id: string) => void;
@@ -60,6 +62,7 @@ export function DuplicateCompare({
           draft={draft}
           existing={existing}
           themeNames={themeNamesFor(existing)}
+          seriesName={seriesNameFor(existing)}
           onIncrement={() => onIncrement(existing.id)}
           onMarkOwned={() => onMarkOwned(existing.id)}
         />
@@ -85,18 +88,20 @@ function Match({
   draft,
   existing,
   themeNames,
+  seriesName,
   onIncrement,
   onMarkOwned,
 }: {
   draft: DraftSummary;
   existing: ItemWithTags;
   themeNames: string[];
+  seriesName: string | null;
   onIncrement: () => void;
   onMarkOwned: () => void;
 }) {
   const palette = useTheme();
   const wished = existing.status === 'wished';
-  const shared = [themeNames.join(' × '), existing.series, typeLabel(existing.type)]
+  const shared = [themeNames.join(' × '), seriesName, typeLabel(existing.type)]
     .filter(Boolean)
     .join(' · ');
 

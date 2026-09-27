@@ -24,7 +24,8 @@ export type Item = {
    * alias updates every item at once — see lib/themes.ts.
    */
   themeIds: string[];
-  series: string | null;
+  /** Id into users/{uid}/series, scoped to one of this item's themes. */
+  seriesId: string | null;
   /** Slug from constants/item-types.ts. */
   type: string | null;
   /** Slug from constants/item-types.ts STATUSES. */
@@ -73,7 +74,7 @@ function fromDoc(snap: QueryDocumentSnapshot<DocumentData>): ItemWithTags {
     id: snap.id,
     name: data.name,
     themeIds: Array.isArray(data.themeIds) ? data.themeIds : [],
-    series: data.series ?? null,
+    seriesId: data.seriesId ?? null,
     type: data.type ?? null,
     status: data.status ?? 'owned',
     size: data.size ?? null,
@@ -160,12 +161,13 @@ export async function listItems(): Promise<ItemWithTags[]> {
 /**
  * Whether an item matches a free-text search.
  *
- * @param themeNames Display names for the item's themeIds, resolved by the caller.
+ * @param names Display names for the item's themeIds and seriesId, resolved by the
+ *   caller — the item itself stores only ids.
  */
-export function itemMatches(item: ItemWithTags, needle: string, themeNames: string[]): boolean {
+export function itemMatches(item: ItemWithTags, needle: string, names: string[]): boolean {
   const q = needle.trim().toLowerCase();
   if (!q) return true;
-  return [item.name, item.series, item.type, item.size, item.color, ...themeNames, ...item.tags]
+  return [item.name, item.type, item.size, item.color, ...names, ...item.tags]
     .filter((field): field is string => Boolean(field))
     .some((field) => field.toLowerCase().includes(q));
 }
@@ -180,7 +182,7 @@ export async function getItem(id: string): Promise<ItemWithTags | null> {
 export type DuplicateKey = {
   name: string;
   themeIds: string[];
-  series: string | null;
+  seriesId: string | null;
   type: string | null;
 };
 
@@ -191,10 +193,6 @@ export type DuplicateKey = {
  * ("繪畫系列" vs "繪畫主題" of the same suitcase) starts at 0.67.
  */
 const NAME_SIMILARITY_THRESHOLD = 0.65;
-
-function normalize(value: string | null): string {
-  return (value ?? '').toLowerCase().replace(/\s+/g, '');
-}
 
 /**
  * Items that look like the one being added.
@@ -211,19 +209,16 @@ function normalize(value: string | null): string {
  */
 export function findPossibleDuplicates(items: ItemWithTags[], draft: DuplicateKey): ItemWithTags[] {
   if (draft.themeIds.length === 0 || !draft.type) return [];
-  const draftSeries = normalize(draft.series);
 
   return items.filter((item) => {
     if (item.type !== draft.type) return false;
     if (!item.themeIds.some((id) => draft.themeIds.includes(id))) return false;
+    if (item.seriesId !== draft.seriesId) return false;
 
-    const itemSeries = normalize(item.series);
-    if (itemSeries !== draftSeries) return false;
-
-    // Matching series is strong evidence, but two blanks are not: without this,
-    // every 拉拉熊 suitcase with no series entered would flag every other one. When
-    // neither side names a series the names have to carry the match instead.
-    if (draftSeries === '') {
+    // Matching series is strong evidence, but two *absent* ones are not: without
+    // this, every 拉拉熊 suitcase with no series picked would flag every other one.
+    // When neither side names a series the names have to carry the match instead.
+    if (draft.seriesId === null) {
       return nameSimilarity(item.name, draft.name) >= NAME_SIMILARITY_THRESHOLD;
     }
     return true;
@@ -263,22 +258,31 @@ export const seedMockItems: () => Promise<void> = __DEV__
   ? async () => {
       const { MOCK_ITEMS, MOCK_THEMES } = await import('@/lib/mock-data');
       const { createTheme, listThemes } = await import('@/lib/themes');
+      const { createSeries, listSeries } = await import('@/lib/series');
 
-      // Themes first: items reference them by id. Reuse any that already exist so
-      // seeding twice doesn't produce a second "拉拉熊".
-      const existing = await listThemes();
-      const idByName = new Map(existing.map((t) => [t.name, t.id]));
+      // Themes first, then series, then items: each references the one before it by
+      // id. Existing entries are reused so seeding twice doesn't produce a second
+      // "拉拉熊".
+      const themeIdByName = new Map((await listThemes()).map((t) => [t.name, t.id]));
       for (const { name, aliases } of MOCK_THEMES) {
-        if (!idByName.has(name)) idByName.set(name, await createTheme(name, aliases));
+        if (!themeIdByName.has(name)) themeIdByName.set(name, await createTheme(name, aliases));
+      }
+
+      const seriesIdByName = new Map((await listSeries()).map((s) => [s.name, s.id]));
+      for (const { themeNames, seriesName } of MOCK_ITEMS) {
+        if (!seriesName || seriesIdByName.has(seriesName)) continue;
+        const themeId = themeIdByName.get(themeNames[0]);
+        if (themeId) seriesIdByName.set(seriesName, await createSeries(themeId, seriesName));
       }
 
       // Sequential rather than Promise.all: createItem stamps createdAt with
       // serverTimestamp(), and writing them in order keeps the list order predictable.
-      for (const { item, themeNames, tags } of MOCK_ITEMS) {
+      for (const { item, themeNames, seriesName, tags } of MOCK_ITEMS) {
         const themeIds = themeNames
-          .map((name) => idByName.get(name))
+          .map((name) => themeIdByName.get(name))
           .filter((id): id is string => Boolean(id));
-        await createItem({ ...item, themeIds }, tags);
+        const seriesId = seriesName ? (seriesIdByName.get(seriesName) ?? null) : null;
+        await createItem({ ...item, themeIds, seriesId }, tags);
       }
     }
   : async () => {};

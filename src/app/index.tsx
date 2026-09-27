@@ -18,6 +18,7 @@ import { Spacing } from '@/constants/theme';
 import { useAuthUser } from '@/hooks/use-auth-user';
 import { useTheme } from '@/hooks/use-theme';
 import { clearAllItems, itemMatches, ItemWithTags, listItems, seedMockItems } from '@/lib/db';
+import { listSeries, type Series } from '@/lib/series';
 import { listThemes, type Theme } from '@/lib/themes';
 import { auth } from '@/lib/firebase';
 
@@ -33,6 +34,7 @@ export default function ItemListScreen() {
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [items, setItems] = useState<ItemWithTags[]>([]);
   const [themes, setThemes] = useState<Theme[]>([]);
+  const [series, setSeries] = useState<Series[]>([]);
   const [seeding, setSeeding] = useState(false);
 
   // Items store theme ids, so the names shown on cards and matched by the search box
@@ -41,10 +43,15 @@ export default function ItemListScreen() {
     (id: string) => themes.find((t) => t.id === id)?.name ?? '',
     [themes],
   );
+  const seriesName = useCallback(
+    (id: string | null) => (id ? (series.find((s) => s.id === id)?.name ?? null) : null),
+    [series],
+  );
 
   const reload = useCallback(() => {
     listItems().then(setItems);
     listThemes().then(setThemes);
+    listSeries().then(setSeries);
   }, []);
 
   useFocusEffect(
@@ -77,9 +84,12 @@ export default function ItemListScreen() {
         (item) =>
           (!themeFilter || item.themeIds.includes(themeFilter)) &&
           (!typeFilter || item.type === typeFilter) &&
-          itemMatches(item, query, item.themeIds.map(themeName)),
+          itemMatches(item, query, [
+            ...item.themeIds.map(themeName),
+            seriesName(item.seriesId) ?? '',
+          ]),
       ),
-    [inStatus, themeFilter, typeFilter, query, themeName],
+    [inStatus, themeFilter, typeFilter, query, themeName, seriesName],
   );
 
   const filtering = Boolean(query || themeFilter || typeFilter);
@@ -205,6 +215,7 @@ export default function ItemListScreen() {
                 <ItemCard
                   item={item}
                   themeNames={item.themeIds.map(themeName).filter(Boolean)}
+                  seriesName={seriesName(item.seriesId)}
                   onPress={() => router.push(`/item/${item.id}`)}
                 />
               ) : (

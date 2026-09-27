@@ -11,6 +11,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { listItems } from '@/lib/db';
+import { deleteSeries, listSeries, type Series } from '@/lib/series';
 import { createTheme, deleteTheme, listThemes, type Theme, updateTheme } from '@/lib/themes';
 
 export default function ThemesScreen() {
@@ -18,6 +19,7 @@ export default function ThemesScreen() {
 
   const [themes, setThemes] = useState<Theme[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [series, setSeries] = useState<Series[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -25,9 +27,10 @@ export default function ThemesScreen() {
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
 
   const reload = useCallback(() => {
-    Promise.all([listThemes(), listItems()])
-      .then(([loadedThemes, items]) => {
+    Promise.all([listThemes(), listItems(), listSeries()])
+      .then(([loadedThemes, items, loadedSeries]) => {
         setThemes(loadedThemes);
+        setSeries(loadedSeries);
         const tally: Record<string, number> = {};
         for (const item of items) {
           for (const id of item.themeIds) tally[id] = (tally[id] ?? 0) + 1;
@@ -89,6 +92,7 @@ export default function ThemesScreen() {
                   key={theme.id}
                   theme={theme}
                   count={counts[theme.id] ?? 0}
+                  series={series.filter((s) => s.themeId === theme.id)}
                   editing={editing === theme.id}
                   confirmingDelete={confirmingDelete === theme.id}
                   onToggleEdit={() => setEditing(editing === theme.id ? null : theme.id)}
@@ -102,6 +106,11 @@ export default function ThemesScreen() {
                   onCancelDelete={() => setConfirmingDelete(null)}
                   onDelete={() =>
                     run(async () => {
+                      // A series only means something inside its theme, so it goes
+                      // with it rather than becoming unreachable.
+                      await Promise.all(
+                        series.filter((s) => s.themeId === theme.id).map((s) => deleteSeries(s.id)),
+                      );
                       await deleteTheme(theme.id);
                       setConfirmingDelete(null);
                     }, '刪除失敗')
@@ -119,6 +128,7 @@ export default function ThemesScreen() {
 function ThemeRow({
   theme,
   count,
+  series,
   editing,
   confirmingDelete,
   onToggleEdit,
@@ -129,6 +139,7 @@ function ThemeRow({
 }: {
   theme: Theme;
   count: number;
+  series: Series[];
   editing: boolean;
   confirmingDelete: boolean;
   onToggleEdit: () => void;
@@ -148,8 +159,21 @@ function ThemeRow({
           <ThemedText type="smallBold">{theme.name}</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
             {count} 件收藏
+            {series.length > 0 ? ` · ${series.length} 個系列` : ''}
             {theme.aliases.length > 0 ? ` · 別名 ${theme.aliases.join('、')}` : ''}
           </ThemedText>
+          {series.length > 0 && (
+            <View style={styles.seriesRow}>
+              {series.map((s) => (
+                <View key={s.id} style={[styles.seriesChip, { backgroundColor: palette.backgroundElement }]}>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {s.name}
+                    {s.year ? ` ${s.year}` : ''}
+                  </ThemedText>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
         <Pressable onPress={onToggleEdit} hitSlop={8}>
           <ThemedText type="small" themeColor="textSecondary">
@@ -199,8 +223,8 @@ function ThemeRow({
             <InlineBanner
               tone="danger"
               message={
-                count > 0
-                  ? `刪除「${theme.name}」？${count} 件收藏會失去這個主題，但不會被刪除。`
+                count > 0 || series.length > 0
+                  ? `刪除「${theme.name}」？底下 ${series.length} 個系列會一併刪除，${count} 件收藏會失去這個主題但不會被刪除。`
                   : `確定要刪除「${theme.name}」？`
               }
               actionLabel="確定刪除"
@@ -243,6 +267,8 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   rowTitle: { flex: 1, gap: 2 },
+  seriesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one, marginTop: Spacing.one },
+  seriesChip: { paddingHorizontal: Spacing.two, paddingVertical: 2, borderRadius: 999 },
   editor: { gap: Spacing.three },
   field: { gap: Spacing.one },
   hint: { opacity: 0.7, marginTop: -2 },

@@ -4,6 +4,7 @@ import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FormField } from '@/components/form-field';
+import { SeriesSelector } from '@/components/series-selector';
 import { Icon } from '@/components/icon';
 import { InlineBanner } from '@/components/inline-banner';
 import { ScreenContainer } from '@/components/screen-container';
@@ -17,6 +18,7 @@ import { TypePicker } from '@/components/type-picker';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { deleteItem, getItem, getItemPhoto, ItemWithTags, updateItem } from '@/lib/db';
+import { createSeries, listSeries, type Series } from '@/lib/series';
 import { createTheme, listThemes, type Theme } from '@/lib/themes';
 
 export default function ItemDetailScreen() {
@@ -28,7 +30,7 @@ export default function ItemDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState('');
   const [themeIds, setThemeIds] = useState<string[]>([]);
-  const [series, setSeries] = useState('');
+  const [seriesId, setSeriesId] = useState<string | null>(null);
   const [type, setType] = useState('');
   const [status, setStatus] = useState('owned');
   const [size, setSize] = useState('');
@@ -60,6 +62,20 @@ export default function ItemDetailScreen() {
     return id;
   }
 
+  const [seriesList, setSeriesList] = useState<Series[]>([]);
+  const refreshSeries = useCallback(() => {
+    listSeries()
+      .then(setSeriesList)
+      .catch(() => setSeriesList([]));
+  }, []);
+  useEffect(refreshSeries, [refreshSeries]);
+
+  async function handleCreateSeries(themeId: string, name: string): Promise<string> {
+    const id = await createSeries(themeId, name);
+    refreshSeries();
+    return id;
+  }
+
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
@@ -83,7 +99,7 @@ export default function ItemDetailScreen() {
         setItem(loaded);
         setName(loaded.name);
         setThemeIds(loaded.themeIds);
-        setSeries(loaded.series ?? '');
+        setSeriesId(loaded.seriesId);
         setType(loaded.type ?? '');
         setStatus(loaded.status);
         setSize(loaded.size ?? '');
@@ -110,7 +126,7 @@ export default function ItemDetailScreen() {
         {
           name: name.trim(),
           themeIds,
-          series: series.trim() || null,
+          seriesId,
           type: type.trim() || null,
           status,
           size: size.trim() || null,
@@ -192,7 +208,18 @@ export default function ItemDetailScreen() {
                 />
               </View>
 
-              <FormField label="系列" value={series} onChangeText={setSeries} />
+              <View style={styles.field}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  系列
+                </ThemedText>
+                <SeriesSelector
+                  value={seriesId}
+                  series={seriesList}
+                  themeIds={themeIds}
+                  onChange={setSeriesId}
+                  onCreate={handleCreateSeries}
+                />
+              </View>
             </Section>
 
             <Section title="分類與標籤">

@@ -9,17 +9,20 @@ import { ItemWithTags } from '@/lib/db';
 export function ItemCard({
   item,
   themeNames,
+  seriesName,
   onPress,
 }: {
   item: ItemWithTags;
   /** Display names for item.themeIds, resolved by the caller. */
   themeNames: string[];
+  /** Display name for item.seriesId, resolved by the caller. */
+  seriesName: string | null;
   onPress: () => void;
 }) {
   const theme = useTheme();
   // "×" rather than "·" between themes: it reads as a collaboration, which is what a
   // multi-theme item always is.
-  const subtitle = [themeNames.join(' × '), item.series].filter(Boolean).join(' · ');
+  const subtitle = [themeNames.join(' × '), seriesName].filter(Boolean).join(' · ');
   const label = typeLabel(item.type);
 
   return (

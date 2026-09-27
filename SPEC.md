@@ -65,16 +65,14 @@
 | `aliases` | string[] | | 別名，例 `["Rilakkuma", "リラックマ"]`。AI 回傳值靠這個對應到既有主題，否則會冒出「拉拉熊」「Rilakkuma」兩個 |
 | `coverItemId` | string | | 主題封面要用哪一筆收藏的照片 **（未實作）** |
 
-### series 系列 **（未實作）**
-
-目前 `series` 仍是 item 上的自由文字。升格成集合之後，重複偵測比對系列才不會被錯字擋掉。
+### series 系列
 
 | 欄位 | 型別 | 必填 | 說明 |
 |---|---|:---:|---|
 | `id` | string | ✓ | 自動產生 |
 | `themeId` | string | ✓ | 所屬主題 |
 | `name` | string | ✓ | 例「草莓系列」 |
-| `year` | number | | 發售年份。同名系列跨年復刻時用來區分 |
+| `year` | number | | 發售年份。同名系列跨年復刻時用來區分（資料層已有，表單尚未提供輸入）|
 
 ### items 收藏
 
@@ -85,7 +83,7 @@
 | `thumbnail` | string | | 320px 縮圖，清單與細節頁首次繪製用 |
 | `hasPhoto` | boolean | ✓ | `photos/{itemId}` 是否存在 |
 | `themeIds` | string[] | ✓ | 可多筆，聯名用 |
-| `series` | string | | 系列名稱。SPEC 目標是 `seriesId` 指向 series 集合 **（未實作）** |
+| `seriesId` | string | | 指向 series 集合，必須屬於 `themeIds` 其中之一 |
 | `type` | enum | ✓ | 見下方類型清單 |
 | `status` | enum | ✓ | `wished` 想要 · `owned` 已擁有 · `gifted` 已送出 · `sold` 已售出。預設 `owned` |
 | `size` | string | | 例「M」「坐姿」。**同系列不同尺寸是最容易買重複的地方** |
@@ -159,7 +157,7 @@
 - 主題列表：名稱、收藏件數、別名（封面照 **未實作**）
 - 新增 / 重新命名 / 刪除主題
 - 編輯別名 —— 直接影響 AI 辨識能不能對應到既有主題
-- 主題底下的系列清單 **（未實作，需先完成 series 集合）**
+- 主題底下的系列清單（唯讀；刪除主題時一併刪除）
 
 ### 重複比對
 
@@ -214,9 +212,9 @@
 |---|---|
 | 類型相同 | slug 完全相等 |
 | 至少共享一個主題 | `themeIds` 交集非空 |
-| 系列相同 | 正規化後相等（轉小寫、去空白，`null` 視為空字串）|
+| 系列相同 | `seriesId` 完全相等（`null` 也算相等）|
 
-**兩邊系列都空白時，額外要求名稱相似度 ≥ 0.65**。否則「系列相同」會退化成兩個空字串相等，任兩筆同主題同類型的收藏都會互相誤報。
+**兩邊都沒選系列時，額外要求名稱相似度 ≥ 0.65**。否則「系列相同」會退化成兩個 `null` 相等，任兩筆同主題同類型的收藏都會互相誤報。
 
 相似度用字元 bigram 的 Dice 係數（`lib/similarity.ts`）—— 中文沒有空格可以斷詞，滑動取兩字一組才抓得到共同片段。門檻由真實案例的分佈決定：最低的真陽性 0.667（同一個行李箱的「繪畫系列」vs「繪畫主題」），最高的假陽性 0.600（「行李箱」vs「旅行箱」）。
 
@@ -319,6 +317,5 @@ Figma 元件庫對照。前六個程式裡已經有了。
 
 差距清單與優先順序見 [PLAN.md](PLAN.md)。摘要：
 
-- `series` 仍是自由文字，尚未升格成集合
-- `purchasedAt` / `price` / `store`、`themes.coverItemId`、`series.year` 未實作
+- `purchasedAt` / `price` / `store`、`themes.coverItemId` 未實作；`series.year` 有欄位但表單沒有輸入
 - 重複偵測只比對 metadata，沒有影像比對

@@ -30,8 +30,10 @@ export const MOCK_THEMES: { name: string; aliases: string[] }[] = [
 
 /** `themeNames` are resolved to ids by the seeder — see seedMockItems in lib/db.ts. */
 export type MockItem = {
-  item: Omit<ItemInput, 'themeIds'>;
+  item: Omit<ItemInput, 'themeIds' | 'seriesId'>;
   themeNames: string[];
+  /** Created under the first of `themeNames`, matching the app's own behaviour. */
+  seriesName: string | null;
   tags: string[];
 };
 
@@ -39,7 +41,6 @@ export const MOCK_ITEMS: MockItem[] = [
   {
     item: {
       name: '草莓蛋糕拉拉熊',
-      series: '草莓派對系列',
       type: 'plush',
       status: 'owned',
       size: 'M・坐姿',
@@ -49,12 +50,12 @@ export const MOCK_ITEMS: MockItem[] = [
       thumbnail: PHOTO.bear,
     },
     themeNames: ['拉拉熊'],
+    seriesName: '草莓派對系列',
     tags: ['拉拉熊', 'rilakkuma', '限定', '草莓', 'strawberry', '絨毛', 'plush'],
   },
   {
     item: {
       name: '森林動物小隊',
-      series: '森林散步系列',
       type: 'blind-box',
       status: 'owned',
       size: '盒玩',
@@ -64,12 +65,12 @@ export const MOCK_ITEMS: MockItem[] = [
       thumbnail: PHOTO.forest,
     },
     themeNames: ['拉拉熊'],
+    seriesName: '森林散步系列',
     tags: ['拉拉熊', 'rilakkuma', '盲盒', 'blind box', '完整盒況', '森林'],
   },
   {
     item: {
       name: '午夜黑貓公仔',
-      series: '夜色收藏系列',
       type: 'figure',
       status: 'owned',
       size: '12 公分',
@@ -79,12 +80,12 @@ export const MOCK_ITEMS: MockItem[] = [
       thumbnail: PHOTO.cat,
     },
     themeNames: ['三麗鷗'],
+    seriesName: '夜色收藏系列',
     tags: ['三麗鷗', 'sanrio', '黑貓', 'black cat', '限定', '公仔', 'figure'],
   },
   {
     item: {
       name: '森林鈴鐺精靈',
-      series: '森林探險系列',
       type: 'keychain',
       status: 'wished',
       size: 'S・吊飾',
@@ -94,12 +95,12 @@ export const MOCK_ITEMS: MockItem[] = [
       thumbnail: PHOTO.bell,
     },
     themeNames: ['吉伊卡哇'],
+    seriesName: '森林探險系列',
     tags: ['吉伊卡哇', 'chiikawa', '聖誕節', 'christmas', '吊飾', 'keychain'],
   },
   {
     item: {
       name: '復古陶瓷小狗組',
-      series: '復古生活系列',
       type: 'tableware',
       status: 'owned',
       size: '一組兩入',
@@ -109,12 +110,12 @@ export const MOCK_ITEMS: MockItem[] = [
       thumbnail: PHOTO.ceramic,
     },
     themeNames: ['寶可夢'],
+    seriesName: '復古生活系列',
     tags: ['寶可夢', 'pokemon', '二手', 'secondhand', '復古', 'retro', '餐具'],
   },
   {
     item: {
       name: '格鬥經典角色公仔',
-      series: '經典遊戲系列',
       type: 'figure',
       status: 'wished',
       size: '15 公分',
@@ -124,12 +125,12 @@ export const MOCK_ITEMS: MockItem[] = [
       thumbnail: PHOTO.retro,
     },
     themeNames: ['寶可夢'],
+    seriesName: '經典遊戲系列',
     tags: ['寶可夢', 'pokemon', '公仔', 'figure', '經典', 'classic'],
   },
   {
     item: {
       name: '拉拉熊 × 三麗鷗 聯名馬克杯',
-      series: '週年聯名系列',
       type: 'tableware',
       status: 'owned',
       size: '350ml',
@@ -139,6 +140,7 @@ export const MOCK_ITEMS: MockItem[] = [
       thumbnail: PHOTO.ceramic,
     },
     themeNames: ['拉拉熊', '三麗鷗'],
+    seriesName: '週年聯名系列',
     tags: ['拉拉熊', 'rilakkuma', '三麗鷗', 'sanrio', '聯名', 'collab', '馬克杯', 'mug'],
   },
 ];
