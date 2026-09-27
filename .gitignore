@@ -53,3 +53,9 @@ dist/
 
 # Cloudflare Worker secrets for local development.
 worker/.dev.vars
+
+# Per-environment settings and their builds.
+.env.staging
+.env.production
+dist-staging/
+dist-production/

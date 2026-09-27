@@ -25,7 +25,8 @@
 5. [掛上自訂網域](#5-掛上自訂網域)
 6. [讓 Google 登入在新網域可用](#6-讓-google-登入在新網域可用)
 7. [驗證清單](#7-驗證清單)
-8. [之後更新網站](#8-之後更新網站)
+8. [測試與正式兩個環境](#8-測試與正式兩個環境)
+9. [之後更新網站](#9-之後更新網站)
 9. [之後把 Groq key 搬到伺服器](#之後把-groq-key-搬到伺服器)
 
 ---
@@ -161,7 +162,61 @@ DNS 不在 Cloudflare 上的話，它會告訴你要加什麼記錄，通常是�
 
 ---
 
-## 8. 之後更新網站
+## 8. 測試與正式兩個環境
+
+三層各自切分，互不影響。
+
+| | 測試 | 正式 |
+|---|---|---|
+| 網站 | `snaplocker-staging.pages.dev` | `snaplocker.pages.dev` |
+| Worker | `snaplocker-api-staging` | `snaplocker-api` |
+| KV（額度）| 各自獨立 | 各自獨立 |
+| 每日額度 | 20 次 | 5 次 |
+| 設定檔 | `.env.staging` | `.env.production` |
+
+### 建置與部署
+
+```bash
+npm run deploy:staging      # 建置 + 部署到測試
+npm run deploy:production   # 建置 + 部署到正式
+```
+
+只建置不部署：`npm run build:staging`，產出在 `dist-staging/`。
+
+### Worker 的兩個環境
+
+```bash
+cd worker
+# 測試
+npx wrangler kv namespace create USAGE --env staging     # id 填進 wrangler.toml
+npx wrangler secret put GROQ_API_KEY --env staging
+npx wrangler deploy --env staging
+
+# 正式
+npx wrangler kv namespace create USAGE --env production
+npx wrangler secret put GROQ_API_KEY --env production
+npx wrangler deploy --env production
+```
+
+**KV 刻意不共用** —— 共用的話測試時跑掉的額度會吃掉真實使用者的份。
+
+每個環境的 `ALLOWED_ORIGINS` 只列自己的網域，所以測試站打不到正式的 Worker，反之亦然。
+
+### 為什麼建置腳本一定要清快取
+
+`EXPO_PUBLIC_*` 是在 Babel 轉換階段被**內嵌**進程式碼的，而 Metro 會快取轉換結果。先建 production 再建 staging，若不清快取，第二份會沿用第一份嵌進去的網址 —— **正式版悄悄打到測試後端，而畫面上完全看不出來**。
+
+`scripts/build-web.sh` 因此固定帶 `--clear`。代價是每次建置多花約 20 秒，換掉一整類難以察覺的錯誤，划算。
+
+### 資料還是共用的
+
+上面切分的是**網站、Worker、額度**。Firestore **兩個環境仍然指向同一個專案**，所以測試時建的收藏會跟真實資料混在一起。
+
+要真正隔離，得開第二個 Firebase 專案，並在 `.env.staging` 填入它的設定（欄位見 `.env.example`）。程式碼已經支援 —— `src/lib/firebase-config.ts` 讓每個值都可被環境變數覆寫，預設值仍是現有專案，所以不設定也能跑。
+
+代價是新專案要重做：啟用 Google 登入、貼上 Firestore 規則、把所有來源加進授權網域。值不值得看你測試時會不會產生大量不想留下的資料。
+
+## 9. 之後更新網站
 
 ```bash
 npx expo export --platform web --output-dir dist

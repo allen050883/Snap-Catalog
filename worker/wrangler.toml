@@ -1,23 +1,62 @@
-name = "snaplocker-api"
+# Shared by every environment. `wrangler dev` uses this top level directly, so local
+# development needs no --env flag; deploys always name one.
+name = "snaplocker-api-dev"
 main = "src/index.ts"
 compatibility_date = "2026-09-27"
 
 [vars]
 FIREBASE_PROJECT_ID = "snap-catalog-a0c41"
-# Only these origins may call the Worker. Add the custom domain here once it exists;
-# a request from anywhere else is refused before it can spend any quota.
-ALLOWED_ORIGINS = "http://localhost:8081,https://snaplocker.pages.dev"
+ALLOWED_ORIGINS = "http://localhost:8081,http://localhost:8080"
 DAILY_LIMIT = "5"
 GROQ_MODEL = "qwen/qwen3.8-27b"
 
-# Daily counts, keyed by uid and date. Create it once with:
-#   npx wrangler kv namespace create USAGE
-# then paste the id it prints below.
+# Local development uses a simulated namespace, so the id here is never read. Each
+# deployed environment gets a real one of its own below — sharing would let test
+# runs eat the quota of real users.
 [[kv_namespaces]]
 binding = "USAGE"
 id = "local-development-placeholder"
 
-# GROQ_API_KEY is deliberately absent: it is a secret, set with
-#   npx wrangler secret put GROQ_API_KEY
-# Putting it here would commit the key to the repository, which is the exact problem
-# this Worker exists to solve.
+# ---------------------------------------------------------------------------
+# 測試環境
+#   npx wrangler kv namespace create USAGE --env staging
+#   npx wrangler secret put GROQ_API_KEY --env staging
+#   npx wrangler deploy --env staging
+# ---------------------------------------------------------------------------
+[env.staging]
+name = "snaplocker-api-staging"
+
+[env.staging.vars]
+FIREBASE_PROJECT_ID = "snap-catalog-a0c41"
+ALLOWED_ORIGINS = "https://snaplocker-staging.pages.dev"
+# Looser than production: the point of this environment is to exercise the flow,
+# not to ration it.
+DAILY_LIMIT = "20"
+GROQ_MODEL = "qwen/qwen3.8-27b"
+
+[[env.staging.kv_namespaces]]
+binding = "USAGE"
+id = "REPLACE_WITH_STAGING_KV_ID"
+
+# ---------------------------------------------------------------------------
+# 正式環境
+#   npx wrangler kv namespace create USAGE --env production
+#   npx wrangler secret put GROQ_API_KEY --env production
+#   npx wrangler deploy --env production
+# ---------------------------------------------------------------------------
+[env.production]
+name = "snaplocker-api"
+
+[env.production.vars]
+FIREBASE_PROJECT_ID = "snap-catalog-a0c41"
+ALLOWED_ORIGINS = "https://snaplocker.pages.dev"
+DAILY_LIMIT = "5"
+GROQ_MODEL = "qwen/qwen3.8-27b"
+
+[[env.production.kv_namespaces]]
+binding = "USAGE"
+id = "REPLACE_WITH_PRODUCTION_KV_ID"
+
+# GROQ_API_KEY is deliberately absent everywhere: it is a secret, set per
+# environment with `wrangler secret put GROQ_API_KEY --env <name>`. Writing it here
+# would commit the key, which is the problem this Worker exists to solve.

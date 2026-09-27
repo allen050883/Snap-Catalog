@@ -48,7 +48,12 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "build:staging": "./scripts/build-web.sh staging",
+    "build:production": "./scripts/build-web.sh production",
+    "deploy:staging": "npm run build:staging && npx wrangler pages deploy dist-staging --project-name=snaplocker-staging",
+    "deploy:production": "npm run build:production && npx wrangler pages deploy dist-production --project-name=snaplocker",
+    "typecheck": "tsc --noEmit"
   },
   "private": true
 }
