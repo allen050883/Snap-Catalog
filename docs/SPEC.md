@@ -4,7 +4,7 @@
 > App 的目的是在買之前查到「我是不是已經有了」—— 下面每個設計決定都回推到這件事。
 >
 > 標示 **（未實作）** 的是還沒做的，其餘都已經在程式裡了。
-> 差距清單見 [PLAN.md](PLAN.md)，環境與實作細節見 [README.md](README.md)，架構見 [ARCHITECTURE.md](ARCHITECTURE.md)。
+> 差距清單見 [PLAN.md](PLAN.md)，環境與實作細節見 [README.md](../README.md)，架構見 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ## 目錄
 

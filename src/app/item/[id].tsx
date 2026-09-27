@@ -1,6 +1,6 @@
 import Head from 'expo-router/head';
 import { useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -19,9 +19,10 @@ import { TypePicker } from '@/components/type-picker';
 import { Spacing } from '@/constants/theme';
 import { useCloseScreen } from '@/hooks/use-close-screen';
 import { useTheme } from '@/hooks/use-theme';
+import { useCatalog } from '@/lib/catalog-store';
 import { deleteItem, getItem, getItemPhoto, ItemWithTags, updateItem } from '@/lib/db';
-import { createSeries, listSeries, type Series } from '@/lib/series';
-import { createTheme, listThemes, type Theme } from '@/lib/themes';
+import { createSeries } from '@/lib/series';
+import { createTheme } from '@/lib/themes';
 
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -50,31 +51,20 @@ export default function ItemDetailScreen() {
   // rather than holding the whole page back on an image.
   const [fullPhoto, setFullPhoto] = useState<string | null>(null);
 
-  const [themes, setThemes] = useState<Theme[]>([]);
-  const refreshThemes = useCallback(() => {
-    listThemes()
-      .then(setThemes)
-      .catch(() => setThemes([]));
-  }, []);
-  useEffect(refreshThemes, [refreshThemes]);
+  // Shared with every other screen (lib/catalog-store.tsx).
+  const { themes, series: seriesList, refresh, invalidate } = useCatalog();
 
   async function handleCreateTheme(name: string): Promise<string> {
     const id = await createTheme(name);
-    refreshThemes();
+    invalidate();
+    await refresh();
     return id;
   }
 
-  const [seriesList, setSeriesList] = useState<Series[]>([]);
-  const refreshSeries = useCallback(() => {
-    listSeries()
-      .then(setSeriesList)
-      .catch(() => setSeriesList([]));
-  }, []);
-  useEffect(refreshSeries, [refreshSeries]);
-
   async function handleCreateSeries(themeId: string, name: string): Promise<string> {
     const id = await createSeries(themeId, name);
-    refreshSeries();
+    invalidate();
+    await refresh();
     return id;
   }
 
@@ -123,6 +113,7 @@ export default function ItemDetailScreen() {
     setSaving(true);
     setError(null);
     try {
+      invalidate();
       await updateItem(
         item.id,
         {
@@ -149,6 +140,7 @@ export default function ItemDetailScreen() {
   async function handleDelete() {
     if (!item) return;
     try {
+      invalidate();
       await deleteItem(item.id);
       close();
     } catch (err) {

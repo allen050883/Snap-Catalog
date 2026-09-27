@@ -138,7 +138,7 @@ DNS 不在 Cloudflare 上的話，它會告訴你要加什麼記錄，通常是�
 
 網頁版的登入走的是 Firebase 的 `signInWithPopup`（`src/hooks/use-google-sign-in.web.ts`），它導向 Firebase 託管網域上的 auth handler —— 那個網址在 Firebase 建立 OAuth client 時就註冊好了，所以**不用碰 Google Cloud Console**。
 
-這是刻意的設計。`expo-auth-session` 那套會把 redirect 指回「你當下服務的 origin」，那表示每換一個網域、每換一個 port 都要回 Google Cloud Console 手動加一條。詳見 [README.md](README.md) 的「Web 的 Google 登入」。
+這是刻意的設計。`expo-auth-session` 那套會把 redirect 指回「你當下服務的 origin」，那表示每換一個網域、每換一個 port 都要回 Google Cloud Console 手動加一條。詳見 [README.md](../README.md) 的「Web 的 Google 登入」。
 
 ---
 

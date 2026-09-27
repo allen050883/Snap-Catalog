@@ -4,7 +4,7 @@
 
 介面是繁體中文的，AI 辨識出來的內容也是。
 
-架構與資料流見 [ARCHITECTURE.md](ARCHITECTURE.md)，設計規格見 [SPEC.md](SPEC.md)，還沒做的事見 [PLAN.md](PLAN.md)，上線部署見 [DNS.md](DNS.md)。
+架構與資料流見 [ARCHITECTURE.md](docs/ARCHITECTURE.md)，設計規格見 [SPEC.md](docs/SPEC.md)，還沒做的事見 [PLAN.md](docs/PLAN.md)，上線部署見 [DNS.md](docs/DNS.md)。
 
 ## 技術組成
 
@@ -34,11 +34,11 @@ cp .env.example .env   # 填入 Worker 的網址，見下方「AI 辨識的後�
 
 ### 重複偵測
 
-主要功能，規則與理由見 [SPEC.md §5](SPEC.md#5-主要流程新增與重複偵測)。摘要：共享至少一個主題、類型相同、系列相同；兩邊系列都空白時額外要求名稱相似度 ≥ 0.65（字元 bigram 的 Dice 係數，門檻由真實案例分佈決定）。
+主要功能，規則與理由見 [SPEC.md §5](docs/SPEC.md#5-主要流程新增與重複偵測)。摘要：共享至少一個主題、類型相同、系列相同；兩邊系列都空白時額外要求名稱相似度 ≥ 0.65（字元 bigram 的 Dice 係數，門檻由真實案例分佈決定）。
 
 尺寸和顏色刻意不列入比對 —— 它們是兩個候選最可能不同的欄位，而同系列不同尺寸是不同的東西，所以改成顯示在比對畫面上讓你自己判斷。
 
-**已知限制**：這是 metadata 比對，抓不到「同一個東西但兩張照片不一樣」，而那正是主要場景。影像比對因為要付費，目前暫緩，見 [PLAN.md](PLAN.md) §1.1。
+**已知限制**：這是 metadata 比對，抓不到「同一個東西但兩張照片不一樣」，而那正是主要場景。影像比對因為要付費，目前暫緩，見 [PLAN.md](docs/PLAN.md) §1.1。
 
 ### AI 額度用完時
 
@@ -149,7 +149,7 @@ Web 端用 Firebase 自己的 `signInWithPopup`（`src/hooks/use-google-sign-in.
 
 原因是 `EXPO_PUBLIC_*` 開頭的變數會被**明文內嵌進打包後的 JavaScript**。網站一公開，任何人按 F12 就能複製那把 key。收藏資料不受影響（Firestore 規則綁 `request.auth.uid`），但 Groq 額度會被白嫖。
 
-Worker 做三件事，缺一不可：驗證 Firebase ID token（不做的話端點跟外洩的 key 一樣開放）、CORS 只回應白名單 origin、每日額度記在 KV（以前記在 localStorage，使用者自己改得掉）。詳見 [ARCHITECTURE.md](ARCHITECTURE.md) 第 9 節。
+Worker 做三件事，缺一不可：驗證 Firebase ID token（不做的話端點跟外洩的 key 一樣開放）、CORS 只回應白名單 origin、每日額度記在 KV（以前記在 localStorage，使用者自己改得掉）。詳見 [ARCHITECTURE.md](docs/ARCHITECTURE.md) 第 9 節。
 
 #### 設定
 

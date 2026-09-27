@@ -51,7 +51,7 @@
 
 ### 3.1 Android 的 Google 登入不能用
 
-`src/hooks/use-google-sign-in.ts` 的 `ANDROID_CLIENT_ID` 還是空字串，Android build 上的登入必定失敗。步驟見 [README.md](README.md) 的「原生的 OAuth client ID」。
+`src/hooks/use-google-sign-in.ts` 的 `ANDROID_CLIENT_ID` 還是空字串，Android build 上的登入必定失敗。步驟見 [README.md](../README.md) 的「原生的 OAuth client ID」。
 
 注意 Android 的 client ID 與 iOS 的**不會相同** —— 先前曾誤把 iOS 那組當成 Android 的。
 
@@ -87,7 +87,7 @@ SPEC §8 列的開放問題，會影響畫面結構：
 
 ## 5. 暫停中
 
-**獎勵廣告換取額外辨識次數。** 程式碼是註解掉而非刪除，在 `src/app/_layout.tsx`、`src/app/add.tsx` 和 `src/hooks/use-bonus-analysis-ad.ts` 裡，`lib/usage.ts` 的 `bonus` 欄位和 `grantBonusAnalysis()` 都還在。恢復步驟見 [README.md](README.md) 的「每日 AI 額度」一節。
+**獎勵廣告換取額外辨識次數。** 程式碼是註解掉而非刪除，在 `src/app/_layout.tsx`、`src/app/add.tsx` 和 `src/hooks/use-bonus-analysis-ad.ts` 裡，`lib/usage.ts` 的 `bonus` 欄位和 `grantBonusAnalysis()` 都還在。恢復步驟見 [README.md](../README.md) 的「每日 AI 額度」一節。
 
 ## 6. 文件同步
 
@@ -95,6 +95,6 @@ SPEC §8 列的開放問題，會影響畫面結構：
 
 - [SPEC.md](SPEC.md) — 目標設計。標示 **（未實作）** 的項目與本檔第 1、2 節對應
 - [ARCHITECTURE.md](ARCHITECTURE.md) — 架構、資料流、信任邊界
-- [README.md](README.md) — 目前實作與環境設定
+- [README.md](../README.md) — 目前實作與環境設定
 - [DNS.md](DNS.md) — 部署到 Cloudflare 與網域設定
 - 本檔 — 差距清單

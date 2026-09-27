@@ -1,6 +1,6 @@
 import Head from 'expo-router/head';
 import * as ImagePicker from 'expo-image-picker';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -26,16 +26,15 @@ import { Spacing } from '@/constants/theme';
 import { useCloseScreen } from '@/hooks/use-close-screen';
 import { useTheme } from '@/hooks/use-theme';
 import { type CompressedPhoto, compressPhoto } from '@/lib/compress-photo';
+import { useCatalog } from '@/lib/catalog-store';
 import {
   createItem,
   findPossibleDuplicates,
   incrementQuantity,
-  type ItemWithTags,
-  listItems,
   setItemStatus,
 } from '@/lib/db';
-import { createSeries, findSeriesByName, listSeries, type Series } from '@/lib/series';
-import { createTheme, findThemeByName, listThemes, type Theme } from '@/lib/themes';
+import { createSeries, findSeriesByName } from '@/lib/series';
+import { createTheme, findThemeByName } from '@/lib/themes';
 import {
   AuthRequiredError,
   fetchUsage,
@@ -73,31 +72,21 @@ export default function AddItemScreen() {
 
   // Offered as one-tap chips in the theme picker so an existing theme is never
   // retyped — that is what stops "拉拉熊" splitting into near-identical spellings.
-  const [themes, setThemes] = useState<Theme[]>([]);
-  const refreshThemes = useCallback(() => {
-    listThemes()
-      .then(setThemes)
-      .catch(() => setThemes([]));
-  }, []);
-  useEffect(refreshThemes, [refreshThemes]);
+  // Shared with every other screen; a write here marks it stale so the catalog
+  // picks the change up on its next focus (lib/catalog-store.tsx).
+  const { items: catalog, themes, series: seriesList, refresh, invalidate } = useCatalog();
 
   async function handleCreateTheme(name: string): Promise<string> {
     const id = await createTheme(name);
-    refreshThemes();
+    invalidate();
+    await refresh();
     return id;
   }
 
-  const [seriesList, setSeriesList] = useState<Series[]>([]);
-  const refreshSeries = useCallback(() => {
-    listSeries()
-      .then(setSeriesList)
-      .catch(() => setSeriesList([]));
-  }, []);
-  useEffect(refreshSeries, [refreshSeries]);
-
   async function handleCreateSeries(themeId: string, name: string): Promise<string> {
     const id = await createSeries(themeId, name);
-    refreshSeries();
+    invalidate();
+    await refresh();
     return id;
   }
 
@@ -107,14 +96,6 @@ export default function AddItemScreen() {
   /** Theme the AI named but that isn't in the catalog yet — offered, never auto-created. */
   const [suggestedTheme, setSuggestedTheme] = useState<string | null>(null);
 
-  // The whole catalog, kept for the duplicate check. It is only thumbnails and text
-  // now that full photos live elsewhere (lib/db.ts), so holding it is cheap.
-  const [catalog, setCatalog] = useState<ItemWithTags[]>([]);
-  useEffect(() => {
-    listItems()
-      .then(setCatalog)
-      .catch(() => setCatalog([]));
-  }, []);
   /** Dismissed once the user says "not the same" — don't nag on every keystroke after. */
   const [duplicateDismissed, setDuplicateDismissed] = useState(false);
 
@@ -240,6 +221,7 @@ export default function AddItemScreen() {
     setSaving(true);
     setError(null);
     try {
+      invalidate();
       await createItem(
         {
           name: name.trim(),

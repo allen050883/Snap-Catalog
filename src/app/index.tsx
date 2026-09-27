@@ -1,7 +1,7 @@
 import Head from 'expo-router/head';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -18,9 +18,8 @@ import { ITEM_TYPES } from '@/constants/item-types';
 import { Spacing } from '@/constants/theme';
 import { useAuthUser } from '@/hooks/use-auth-user';
 import { useTheme } from '@/hooks/use-theme';
-import { clearAllItems, itemMatches, ItemWithTags, listItems, seedMockItems } from '@/lib/db';
-import { listSeries, type Series } from '@/lib/series';
-import { listThemes, type Theme } from '@/lib/themes';
+import { useCatalog, useCatalogNames } from '@/lib/catalog-store';
+import { clearAllItems, itemMatches, seedMockItems } from '@/lib/db';
 import { auth } from '@/lib/firebase';
 
 export default function ItemListScreen() {
@@ -33,33 +32,15 @@ export default function ItemListScreen() {
   const [status, setStatus] = useState<string>('owned');
   const [themeFilter, setThemeFilter] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
-  const [items, setItems] = useState<ItemWithTags[]>([]);
-  const [themes, setThemes] = useState<Theme[]>([]);
-  const [series, setSeries] = useState<Series[]>([]);
+  // One shared copy for every screen — see lib/catalog-store.tsx for why.
+  const { items, themes, refresh, invalidate, refreshIfStale } = useCatalog();
+  const { themeName, seriesName } = useCatalogNames();
   const [seeding, setSeeding] = useState(false);
 
-  // Items store theme ids, so the names shown on cards and matched by the search box
-  // come from here.
-  const themeName = useCallback(
-    (id: string) => themes.find((t) => t.id === id)?.name ?? '',
-    [themes],
-  );
-  const seriesName = useCallback(
-    (id: string | null) => (id ? (series.find((s) => s.id === id)?.name ?? null) : null),
-    [series],
-  );
 
-  const reload = useCallback(() => {
-    listItems().then(setItems);
-    listThemes().then(setThemes);
-    listSeries().then(setSeries);
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      reload();
-    }, [reload]),
-  );
+  // Refetches only when a write has marked the data stale, so returning from a
+  // screen that changed nothing costs nothing.
+  useFocusEffect(refreshIfStale);
 
   // Everything below is scoped to the current tab, so the filter rows and the count
   // describe what you're actually looking at rather than the whole catalog.
@@ -106,7 +87,8 @@ export default function ItemListScreen() {
     setSeeding(true);
     try {
       await seedMockItems();
-      reload();
+      invalidate();
+      await refresh();
     } finally {
       setSeeding(false);
     }
@@ -116,7 +98,8 @@ export default function ItemListScreen() {
     setSeeding(true);
     try {
       await clearAllItems();
-      reload();
+      invalidate();
+      await refresh();
     } finally {
       setSeeding(false);
     }

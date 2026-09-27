@@ -3,7 +3,7 @@
 SnapLocker 的完整結構、資料流與各個決定的理由。
 
 - 分類模型與畫面規格 → [SPEC.md](SPEC.md)
-- 環境設定與開發 → [README.md](README.md)
+- 環境設定與開發 → [README.md](../README.md)
 - 部署 → [DNS.md](DNS.md)
 - 待辦 → [PLAN.md](PLAN.md)
 

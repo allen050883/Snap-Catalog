@@ -7,6 +7,7 @@ import { ActivityIndicator } from 'react-native';
 // import mobileAds from 'react-native-google-mobile-ads';
 
 import { LoginScreen } from '@/components/login-screen';
+import { CatalogProvider } from '@/lib/catalog-store';
 import { Colors } from '@/constants/theme';
 import { ThemedView } from '@/components/themed-view';
 import { useAuthUser } from '@/hooks/use-auth-user';
@@ -44,12 +45,16 @@ export default function RootLayout() {
       ) : !user ? (
         <LoginScreen />
       ) : (
+        // Keyed on the uid so signing in as someone else rebuilds the store rather
+        // than reusing the previous account's catalog.
+        <CatalogProvider uid={user.uid}>
         <Stack>
           <Stack.Screen name="index" options={{ title: 'SnapLocker', headerShown: false }} />
           <Stack.Screen name="add" options={{ title: '新增收藏', presentation: 'modal' }} />
           <Stack.Screen name="item/[id]" options={{ title: '收藏細節' }} />
           <Stack.Screen name="themes" options={{ title: '主題管理' }} />
         </Stack>
+        </CatalogProvider>
       )}
     </ThemeProvider>
   );
