@@ -1,0 +1,23 @@
+name = "snaplocker-api"
+main = "src/index.ts"
+compatibility_date = "2026-09-27"
+
+[vars]
+FIREBASE_PROJECT_ID = "snap-catalog-a0c41"
+# Only these origins may call the Worker. Add the custom domain here once it exists;
+# a request from anywhere else is refused before it can spend any quota.
+ALLOWED_ORIGINS = "http://localhost:8081,https://snaplocker.pages.dev"
+DAILY_LIMIT = "5"
+GROQ_MODEL = "qwen/qwen3.8-27b"
+
+# Daily counts, keyed by uid and date. Create it once with:
+#   npx wrangler kv namespace create USAGE
+# then paste the id it prints below.
+[[kv_namespaces]]
+binding = "USAGE"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# GROQ_API_KEY is deliberately absent: it is a secret, set with
+#   npx wrangler secret put GROQ_API_KEY
+# Putting it here would commit the key to the repository, which is the exact problem
+# this Worker exists to solve.

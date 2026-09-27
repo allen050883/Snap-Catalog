@@ -36,8 +36,14 @@ import {
 } from '@/lib/db';
 import { createSeries, findSeriesByName, listSeries, type Series } from '@/lib/series';
 import { createTheme, findThemeByName, listThemes, type Theme } from '@/lib/themes';
-import { GroqQuotaError, suggestTagsForPhoto } from '@/lib/groq';
-import { FREE_DAILY_LIMIT, getUsageToday, recordAnalysisUsed, UsageToday } from '@/lib/usage';
+import {
+  AuthRequiredError,
+  fetchUsage,
+  GroqQuotaError,
+  type ServerUsage,
+  suggestTagsForPhoto,
+} from '@/lib/groq';
+import { auth } from '@/lib/firebase';
 
 export default function AddItemScreen() {
   const router = useRouter();
@@ -112,33 +118,43 @@ export default function AddItemScreen() {
   /** Dismissed once the user says "not the same" — don't nag on every keystroke after. */
   const [duplicateDismissed, setDuplicateDismissed] = useState(false);
 
-  const [quota, setQuota] = useState<UsageToday | null>(null);
+  // Counted by the Worker, not the device. It used to be tracked locally, where
+  // anyone could edit it — see worker/src/usage.ts.
+  const [quota, setQuota] = useState<ServerUsage | null>(null);
   useEffect(() => {
-    getUsageToday().then(setQuota);
+    auth.currentUser
+      ?.getIdToken()
+      .then(fetchUsage)
+      .then(setQuota)
+      // A quota that won't load is not worth an error banner — the line simply
+      // stays hidden, and analyzing still reports the real answer.
+      .catch(() => setQuota(null));
   }, []);
 
   // Paused — see the import comment above for how to restore the ad-bonus flow.
+  // Note it now needs a Worker endpoint to grant the bonus: the quota moved server
+  // side, so granting one locally would no longer have any effect.
   // const handleRewardEarned = useCallback(async () => {
-  //   const updated = await grantBonusAnalysis();
-  //   setQuota(updated);
+  //   await grantBonusOnServer(await auth.currentUser!.getIdToken());
+  //   setQuota(await fetchUsage(await auth.currentUser!.getIdToken()));
   //   if (photo) await analyze(photo.full);
   // }, [photo]);
   // const bonusAd = useBonusAnalysisAd(handleRewardEarned);
 
   async function analyze(dataUri: string) {
-    // Re-check against the database rather than the `quota` state closure, so this
-    // stays correct even if called right after quota changed elsewhere.
-    const current = await getUsageToday();
-    if (current.remaining <= 0) {
-      setQuota(current);
-      setError(`今天的 ${FREE_DAILY_LIMIT} 次免費 AI 辨識已用完，明天會重置。你還是可以自己填寫欄位後儲存。`);
+    const user = auth.currentUser;
+    if (!user) {
+      setError('請重新登入後再試一次。');
       return;
     }
 
     setAnalyzing(true);
     setError(null);
     try {
-      const suggestion = await suggestTagsForPhoto(dataUri);
+      // No local pre-check: the Worker holds the real count and refuses the call
+      // itself, so checking here first would only add a number that can disagree.
+      const { suggestion, usage } = await suggestTagsForPhoto(dataUri, await user.getIdToken());
+      setQuota(usage);
       setName(suggestion.name);
 
       // Match the model's answer against existing themes and their aliases before
@@ -165,15 +181,19 @@ export default function AddItemScreen() {
       setColor(suggestion.color ?? '');
       setTags(suggestion.tags);
       setAnalyzed(true);
-      setQuota(await recordAnalysisUsed());
     } catch (err) {
       // A quota message is already written for the reader; anything else is a
       // developer-facing string that needs the context of what failed.
-      setError(
-        err instanceof GroqQuotaError
-          ? err.message
-          : `AI 辨識失敗：${err instanceof Error ? err.message : String(err)}`,
-      );
+      // Quota and sign-in messages are already written for the reader; anything
+      // else is a developer-facing string that needs the context of what failed.
+      if (err instanceof GroqQuotaError) {
+        if (err.usage) setQuota(err.usage);
+        setError(err.message);
+      } else if (err instanceof AuthRequiredError) {
+        setError(err.message);
+      } else {
+        setError(`AI 辨識失敗：${err instanceof Error ? err.message : String(err)}`);
+      }
     } finally {
       setAnalyzing(false);
     }
@@ -343,8 +363,8 @@ export default function AddItemScreen() {
               {quota && (
                 <ThemedText type="small" themeColor="textSecondary">
                   {quota.remaining > 0
-                    ? `今日還可 AI 辨識 ${quota.remaining} 次（每日免費 ${FREE_DAILY_LIMIT} 次）`
-                    : `今日 ${FREE_DAILY_LIMIT} 次免費 AI 辨識已用完，明天重置`}
+                    ? `今日還可 AI 辨識 ${quota.remaining} 次（每日免費 ${quota.limit} 次）`
+                    : `今日 ${quota.limit} 次免費 AI 辨識已用完，明天重置`}
                 </ThemedText>
               )}
 

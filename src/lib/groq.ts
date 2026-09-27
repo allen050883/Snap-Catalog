@@ -1,14 +1,23 @@
-import { ITEM_TYPE_SLUGS } from '@/constants/item-types';
-
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-
-// Groq has retired the llama-4 vision models this used to default to (Scout /
-// Maverick); qwen3.8-27b is the multimodal model Groq currently serves, and it's
-// accurate enough for recognizing a collectible's character/series/color. The rest
-// of Groq's current lineup (the gpt-oss models) is text-only and rejects an
-// image_url part outright, so overriding EXPO_PUBLIC_GROQ_VISION_MODEL only makes
-// sense with another vision model — check GET /v1/models for what's available.
-const DEFAULT_MODEL = 'qwen/qwen3.8-27b';
+/**
+ * AI tagging goes through this project's own Worker (see worker/), not straight to
+ * Groq.
+ *
+ * The key used to live in EXPO_PUBLIC_GROQ_API_KEY, which is embedded in the
+ * built JavaScript in plain text — publishing the site handed it to anyone who
+ * opened devtools. The Worker holds it instead and answers only to a request
+ * carrying a Firebase ID token, so the quota belongs to people who have actually
+ * signed in. The prompt lives there too: it decides what the model is asked, and
+ * that is not something a caller should be able to rewrite.
+ */
+function getEndpoint(): string {
+  const url = process.env.EXPO_PUBLIC_API_URL;
+  if (!url) {
+    throw new Error(
+      '未設定 EXPO_PUBLIC_API_URL。請在專案根目錄的 .env 填入 Worker 的網址（見 .env.example），並重新啟動開發伺服器。',
+    );
+  }
+  return url.replace(/\/$/, '');
+}
 
 export type TagSuggestion = {
   name: string;
@@ -20,118 +29,92 @@ export type TagSuggestion = {
   tags: string[];
 };
 
-const SYSTEM_PROMPT = `You are helping catalog a physical collectible toy/figurine (e.g. Rilakkuma, Sanrio characters, blind-box figures) from a photo, so the owner can tag it and avoid buying duplicates. The owner reads Traditional Chinese (Taiwan).
+/** What the server says is left today — the number that actually decides. */
+export type ServerUsage = { used: number; limit: number; remaining: number };
 
-Look at the photo and respond with ONLY a single JSON object, no markdown fences, no commentary, matching exactly this shape:
-{
-  "name": "short Traditional Chinese name for this item, e.g. '拉拉熊 草莓系列 坐姿玩偶'",
-  "themes": ["the character/IP this belongs to, in Traditional Chinese followed by the original name when that differs, e.g. '拉拉熊 Rilakkuma'. Usually ONE entry; return TWO only for a visible collaboration between two IPs. Empty array if unclear"],
-  "series": "the specific series/collection/wave name, using the official Traditional Chinese name when one exists, else null",
-  "type": "one of these exact English values: ${ITEM_TYPE_SLUGS.join(', ')}",
-  "size": "size or pose if you can tell, in Traditional Chinese, e.g. 'M・坐姿' or '12 公分'. null if not determinable from the photo",
-  "color": "dominant color(s) in Traditional Chinese, e.g. '棕色、粉紅色'",
-  "tags": ["search keywords, 4-10 items"]
-}
+export type AnalysisResult = { suggestion: TagSuggestion; usage: ServerUsage };
 
-Rules:
-- Write name, themes, series, size and color in Traditional Chinese, NOT Simplified Chinese and NOT English.
-- "type" is the one exception: return the English slug exactly as listed above, never a translation.
-- "tags" must contain BOTH Chinese and romanized/English forms of the key terms, so either spelling finds this item later — e.g. ["拉拉熊", "rilakkuma", "絨毛", "plush", "粉紅色", "pink", "草莓"]. Keep Chinese tags unspaced and English tags lowercase.
-- Do not guess "size" from an image with nothing to judge scale against — null is the better answer.
-- If you cannot confidently determine a field, use null (or an empty array) rather than guessing wildly.`;
-
-/**
- * The Groq account has no capacity right now.
- *
- * Both limits surface as HTTP 429: the per-minute token budget (7000 input tokens
- * against roughly 1850 per photo, so about three in a row) and the daily one. They
- * are not worth distinguishing to the person using the app — either way the answer
- * is to wait or to ask whoever holds the key.
- */
+/** No capacity left, either this user's daily allowance or Groq's own rate limit. */
 export class GroqQuotaError extends Error {
-  constructor() {
-    super('AI 額度不足，請洽詢管理員');
+  readonly usage: ServerUsage | null;
+  constructor(message: string, usage: ServerUsage | null) {
+    super(message);
     this.name = 'GroqQuotaError';
+    this.usage = usage;
   }
 }
 
-function getApiKey(): string {
-  const key = process.env.EXPO_PUBLIC_GROQ_API_KEY;
-  if (!key) {
-    throw new Error(
-      'Missing EXPO_PUBLIC_GROQ_API_KEY. Add it to a .env file at the project root (see .env.example) and restart the dev server.',
-    );
+/** The sign-in has expired or was rejected; signing in again is the fix. */
+export class AuthRequiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuthRequiredError';
   }
-  return key;
-}
-
-function extractJson(text: string): unknown {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start === -1 || end === -1 || end < start) {
-    throw new Error(`Model did not return JSON: ${text}`);
-  }
-  return JSON.parse(text.slice(start, end + 1));
 }
 
 /**
  * @param dataUri A `data:image/jpeg;base64,…` URI, exactly as lib/compress-photo.ts
  *   returns it — the same string the app renders, so there is no second encoding
  *   step that could disagree with what the user sees.
+ * @param idToken The signed-in user's Firebase ID token.
  */
-export async function suggestTagsForPhoto(dataUri: string): Promise<TagSuggestion> {
-  const model = process.env.EXPO_PUBLIC_GROQ_VISION_MODEL || DEFAULT_MODEL;
-
-  const response = await fetch(GROQ_API_URL, {
+export async function suggestTagsForPhoto(dataUri: string, idToken: string): Promise<AnalysisResult> {
+  const response = await fetch(`${getEndpoint()}/analyze`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${getApiKey()}`,
+      Authorization: `Bearer ${idToken}`,
     },
-    body: JSON.stringify({
-      model,
-      temperature: 0.2,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: SYSTEM_PROMPT },
-            { type: 'image_url', image_url: { url: dataUri } },
-          ],
-        },
-      ],
-    }),
+    body: JSON.stringify({ image: dataUri }),
   });
 
+  // Every failure path below is already written in Chinese by the Worker, which is
+  // also what keeps Groq's own error text — it names the account and its token
+  // budget — from reaching a browser.
+  const payload = (await response.json().catch(() => null)) as
+    | { suggestion?: unknown; usage?: ServerUsage; error?: string }
+    | null;
+
+  if (response.status === 401) {
+    throw new AuthRequiredError(payload?.error ?? '請重新登入後再試一次。');
+  }
   if (response.status === 429) {
-    // Groq's own message is a paragraph of English naming the org and the token
-    // budget — accurate, but not something to put in front of someone holding a
-    // phone in a shop. The distinct type lets the screen show this text as-is
-    // instead of nesting it inside "AI 辨識失敗：".
-    throw new GroqQuotaError();
+    throw new GroqQuotaError(payload?.error ?? 'AI 額度不足，請洽詢管理員', payload?.usage ?? null);
+  }
+  if (!response.ok || !payload?.suggestion) {
+    throw new Error(payload?.error ?? `AI 辨識服務回應異常（${response.status}）`);
   }
 
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Groq API error ${response.status}: ${body}`);
-  }
-
-  const json = await response.json();
-  const content = json.choices?.[0]?.message?.content;
-  if (typeof content !== 'string') {
-    throw new Error('Unexpected Groq response shape');
-  }
-
-  const parsed = extractJson(content) as Partial<TagSuggestion>;
+  const parsed = payload.suggestion as Partial<TagSuggestion>;
   return {
-    name: typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : '未命名收藏',
-    themes: Array.isArray(parsed.themes)
-      ? parsed.themes.filter((t): t is string => typeof t === 'string' && t.trim() !== '')
-      : [],
-    series: parsed.series ?? null,
-    type: parsed.type ?? null,
-    size: parsed.size ?? null,
-    color: parsed.color ?? null,
-    tags: Array.isArray(parsed.tags) ? parsed.tags.filter((t): t is string => typeof t === 'string') : [],
+    suggestion: {
+      name: typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : '未命名收藏',
+      themes: Array.isArray(parsed.themes)
+        ? parsed.themes.filter((t): t is string => typeof t === 'string' && t.trim() !== '')
+        : [],
+      series: parsed.series ?? null,
+      type: parsed.type ?? null,
+      size: parsed.size ?? null,
+      color: parsed.color ?? null,
+      tags: Array.isArray(parsed.tags) ? parsed.tags.filter((t): t is string => typeof t === 'string') : [],
+    },
+    usage: payload.usage ?? { used: 0, limit: 0, remaining: 0 },
   };
+}
+
+/** Today's remaining allowance for the signed-in user, as the server counts it. */
+export async function fetchUsage(idToken: string): Promise<ServerUsage> {
+  const response = await fetch(`${getEndpoint()}/usage`, {
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+  const payload = (await response.json().catch(() => null)) as
+    | { usage?: ServerUsage; error?: string }
+    | null;
+  if (response.status === 401) {
+    throw new AuthRequiredError(payload?.error ?? '請重新登入後再試一次。');
+  }
+  if (!response.ok || !payload?.usage) {
+    throw new Error(payload?.error ?? `無法取得今日額度（${response.status}）`);
+  }
+  return payload.usage;
 }

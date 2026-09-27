@@ -4,7 +4,7 @@
 
 介面是繁體中文的，AI 辨識出來的內容也是。
 
-設計規格見 [SPEC.md](SPEC.md)，還沒做的事見 [PLAN.md](PLAN.md)，上線部署見 [DNS.md](DNS.md)。
+架構與資料流見 [ARCHITECTURE.md](ARCHITECTURE.md)，設計規格見 [SPEC.md](SPEC.md)，還沒做的事見 [PLAN.md](PLAN.md)，上線部署見 [DNS.md](DNS.md)。
 
 ## 技術組成
 
@@ -17,7 +17,7 @@
 
 ```bash
 npm install
-cp .env.example .env   # 然後把 Groq API key 貼進 .env
+cp .env.example .env   # 填入 Worker 的網址，見下方「AI 辨識的後端」
 ```
 
 接著二選一：`npx expo start --web`（現在就能跑，不需要任何原生 OAuth 設定），或用下面的 dev client 流程在實機上測。
@@ -54,7 +54,7 @@ Groq 原本的錯誤訊息是一整段英文、還帶上組織 id 和 token 預�
 
 Web 上有三個跟原生不同、需要各自處理的地方：
 
-**1. `expo-sqlite` 會讓整個 web bundle 編譯失敗。** 它的瀏覽器版透過一個 worker chunk 載入 SQLite 引擎，而 Metro 的 web serializer 產不出那個 chunk，整包 bundle 會掛在 `Worker chunk not found for: expo-sqlite/web/worker.ts`。用到 SQLite 的只有每日額度，所以 `src/lib/usage.web.ts` 改用 `localStorage` 實作同一套 API，讓 `expo-sqlite` 完全不進 web bundle（跟 `firebase.ts` / `firebase.web.ts` 同樣的平台分檔手法）。原生端維持走 `usage.ts` 的 SQLite。
+**1. `expo-sqlite` 會讓整個 web bundle 編譯失敗**（`Worker chunk not found for: expo-sqlite/web/worker.ts`）。這個專案已經不用 SQLite 了 —— 唯一用到它的每日額度已搬到 Worker —— 但如果之後又引入，要記得它在 web 上編不過。
 
 **2. `Alert.alert()` 在 `react-native-web` 裡是空函式**（實作就是 `static alert() {}`）。所以 web 上所有錯誤訊息都不會出現，刪除確認框也不會跳，等於刪除功能完全失效。現在全部改用 `src/components/inline-banner.tsx` 在畫面內呈現，每個平台都有效。**之後新增程式碼時不要用 `Alert`。**
 
@@ -143,26 +143,39 @@ Web 端用 Firebase 自己的 `signInWithPopup`（`src/hooks/use-google-sign-in.
 
 兩組原生 client ID 還需要一個 redirect URI 的修正：`expo-auth-session` 的 Google provider 預設把原生 redirect 設成 `${bundleId}:/oauthredirect`，但這個 App 並沒有註冊那個 URL scheme — 只有 `app.json` 頂層的 `scheme`（`snapcatalog`）有註冊。`useGoogleSignIn` 因此傳了一個明確的 `{ native: 'snapcatalog:/oauthredirect' }` 覆寫。如果補上 client ID 之後 Android 登入仍然無法跳回 App，先檢查這裡。
 
-### Groq API key
+### AI 辨識的後端
 
-到 https://console.groq.com/keys 拿一組免費的 key，放進 `.env` 的 `EXPO_PUBLIC_GROQ_API_KEY`。`.env` 已經被 git 忽略 — 絕對不要 commit。
+**Groq 的 key 不在 App 裡。** 它在 `worker/` 這個 Cloudflare Worker 上，App 呼叫 Worker，Worker 才去呼叫 Groq。
 
-**安全性提醒：** `EXPO_PUBLIC_*` 開頭的變數會被打包進 client app。自己建置、自己使用的個人 App 沒問題，但如果你哪天把這個 App 上架給別人安裝，任何人都能從 App binary 裡把 key 挖出來。要做成公開 App 的話，請把 Groq 呼叫搬到你自己的小型後端後面。
+原因是 `EXPO_PUBLIC_*` 開頭的變數會被**明文內嵌進打包後的 JavaScript**。網站一公開，任何人按 F12 就能複製那把 key。收藏資料不受影響（Firestore 規則綁 `request.auth.uid`），但 Groq 額度會被白嫖。
 
-### 用哪個模型？
+Worker 做三件事，缺一不可：驗證 Firebase ID token（不做的話端點跟外洩的 key 一樣開放）、CORS 只回應白名單 origin、每日額度記在 KV（以前記在 localStorage，使用者自己改得掉）。詳見 [ARCHITECTURE.md](ARCHITECTURE.md) 第 9 節。
 
-預設是 `qwen/qwen3.8-27b` — Groq 目前提供的多模態模型，辨識收藏品的角色 / 系列 / 顏色已經夠準。
-
-Groq 已經**下架了這個 App 原本預設的 `meta-llama/llama-4-scout` / `llama-4-maverick` 視覺模型**，現在請求它們會直接失敗。Groq 目前陣容裡的其他模型（`openai/gpt-oss-*`）全是純文字模型，收到圖片會回 `messages[0].content must be a string`。所以 `EXPO_PUBLIC_GROQ_VISION_MODEL` 只有在 Groq 之後新增別的視覺模型時才值得設定。確認你的 key 實際能用哪些：
+#### 設定
 
 ```bash
-curl -s https://api.groq.com/openai/v1/models \
-  -H "Authorization: Bearer $EXPO_PUBLIC_GROQ_API_KEY" | python3 -m json.tool
+cd worker
+npm install
+npx wrangler kv namespace create USAGE     # 把印出的 id 填進 wrangler.toml
+npx wrangler secret put GROQ_API_KEY       # 貼上 Groq 的 key
+npx wrangler deploy
 ```
+
+然後把部署後的網址填進專案根目錄 `.env` 的 `EXPO_PUBLIC_API_URL`。
+
+本機開發時在 `worker/` 跑 `npx wrangler dev`，`.env` 填 `http://127.0.0.1:8787`。
+
+`wrangler.toml` 的 `ALLOWED_ORIGINS` 要包含所有會呼叫它的來源 —— 漏掉的話請求會被擋下並回 403。
+
+#### 用哪個模型
+
+`wrangler.toml` 的 `GROQ_MODEL`，預設 `qwen/qwen3.8-27b`。
+
+Groq 已經**下架了這個 App 原本用的 `meta-llama/llama-4-scout` / `llama-4-maverick`**，現在請求它們會直接失敗。其他模型（`openai/gpt-oss-*`）全是純文字，收到圖片會回 `messages[0].content must be a string`。
 
 ## AI 回傳的內容
 
-Prompt（`src/lib/groq.ts`）要求模型用**繁體中文**回答，專有名詞後面接原文：
+Prompt 在 `worker/src/index.ts`（放伺服器端，呼叫端改不了它），要求模型用**繁體中文**回答，專有名詞後面接原文：
 
 ```json
 {
@@ -179,19 +192,19 @@ Prompt（`src/lib/groq.ts`）要求模型用**繁體中文**回答，專有名�
 四個刻意的設計：
 
 - **標籤中英文並存。** 這樣之後不管你打「拉拉熊」還是 `rilakkuma` 都搜得到，不會因為當下想到哪個語言而漏搜。
-- **`type` 是唯一不翻譯的欄位**，存的是英文 slug。清單頁的類型篩選要靠這個值做比對，而中文標籤屬於呈現層、隨時可能改措辭 — 分開之後改文案不會讓舊資料對不上。對照表在 `src/constants/item-types.ts`，`groq.ts` 的 prompt 也是從同一份清單產生允許值，不會兩邊走鐘。
+- **`type` 是唯一不翻譯的欄位**，存的是英文 slug。清單頁的類型篩選要靠這個值做比對，而中文標籤屬於呈現層、隨時可能改措辭 — 分開之後改文案不會讓舊資料對不上。對照表在 `src/constants/item-types.ts`，Worker 的 prompt 也是直接 import 那個檔案產生允許值，不會兩邊走鐘。
 - **`themes` 是陣列，但通常只有一個。** prompt 明確要求只有在畫面上看得出是兩個 IP 聯名時才給兩個，否則一律單一 — 不然模型會把周邊角色也算進去。回傳值不會直接寫入，要先比對既有主題的別名（見上方）。
 - **判斷不出尺寸就回 `null`。** prompt 明講不准從沒有比例參照的照片猜尺寸，寧可留空讓使用者自己填。
 
 ## 每日 AI 額度
 
-AI 辨識（也就是 Groq 呼叫）有次數限制，讓 API 用量可以預期：**每個日曆日 5 次免費**（依裝置本地時間，午夜重置）。用完之後你仍然可以手動填寫所有欄位並儲存 — 被擋住的只有 AI 呼叫本身。
+**每個使用者每天 5 次**，由 Worker 計數（`worker/src/usage.ts`），存在 Cloudflare KV，key 是 `usage:{uid}:{日期}`。用完之後仍可手動填寫所有欄位並儲存 — 被擋住的只有 AI 呼叫本身。次數在 `wrangler.toml` 的 `DAILY_LIMIT` 調整。
 
-追蹤在 `src/lib/usage.ts`（原生：SQLite）/ `usage.web.ts`（web：`localStorage`），每天一筆 `{ used, bonus }`。這份資料**刻意保持本機、各裝置獨立**，因為它管的是你自己的 Groq 用量上限，不是收藏資料。
+重置採**固定時區（Asia/Taipei）**而非裝置本地時間 —— 後者改手機時鐘就能重置。
 
-> Web 上想重置額度來測試：在瀏覽器 DevTools console 執行 `localStorage.removeItem('snap-catalog:ai-usage')`。
+> 這份資料以前存在裝置上（原生 SQLite、web localStorage），使用者自己改得掉，等於沒有把關。搬到伺服器之後 `src/lib/usage.ts` 與 `usage.web.ts` 已刪除。
 
-**目前暫停：看廣告換取額外次數。** 這個功能曾經可以運作 — 看完一支獎勵廣告就多得到當天一次額度 — 用 `react-native-google-mobile-ads` 實作。程式碼是註解掉而非刪除，在 `src/app/_layout.tsx` 和 `src/app/add.tsx` 裡，`usage.ts` 的 `bonus` 欄位和 `grantBonusAnalysis()` 也都還在，隨時可以接回去。橫幅廣告（常駐在畫面上的廣告條）討論過但從未實作。
+**目前暫停：看廣告換取額外次數。** 這個功能曾經可以運作 — 看完一支獎勵廣告就多得到當天一次額度 — 用 `react-native-google-mobile-ads` 實作。程式碼是註解掉而非刪除，在 `src/app/_layout.tsx` 和 `src/app/add.tsx` 裡，但額度已經搬到伺服器，所以恢復時要在 Worker 上加一個發放 bonus 的端點 —— 在前端發放不會有任何效果。橫幅廣告（常駐在畫面上的廣告條）討論過但從未實作。
 
 之後要恢復廣告換額度的流程：
 
@@ -270,11 +283,13 @@ src/
     themes.ts                      # themes 的 CRUD 與別名比對
     similarity.ts                  # 名稱相似度（字元 bigram 的 Dice 係數）
     compress-photo.ts              # 產出 1000px 原圖與 320px 縮圖
-    usage.ts / usage.web.ts        # 每日 AI 額度（本機、各裝置獨立）
-    groq.ts                        # Groq 視覺 API 呼叫與 prompt
+    similarity.ts                  # 名稱相似度（字元 bigram 的 Dice 係數）
+    groq.ts                        # 呼叫 worker/（不是直接呼叫 Groq）
     mock-data.ts                   # 範例資料（僅開發模式，不進正式打包）
   types/firebase-auth-rn.d.ts      # firebase/auth 型別缺口的補丁
 eas.json                           # EAS Build 設定檔
+worker/                            # Cloudflare Worker：AI 辨識的後端
+public/_redirects                  # Cloudflare Pages 路由，expo export 會複製
 figma/                             # Figma Make 產出的設計原型（參考用，不執行）
 ```
 

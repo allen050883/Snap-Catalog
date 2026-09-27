@@ -86,6 +86,7 @@ SPEC §8 列的開放問題，會影響畫面結構：
 這三份要一起維護，改資料結構時特別容易漏：
 
 - [SPEC.md](SPEC.md) — 目標設計。標示 **（未實作）** 的項目與本檔第 1、2 節對應
+- [ARCHITECTURE.md](ARCHITECTURE.md) — 架構、資料流、信任邊界
 - [README.md](README.md) — 目前實作與環境設定
 - [DNS.md](DNS.md) — 部署到 Cloudflare 與網域設定
 - 本檔 — 差距清單
