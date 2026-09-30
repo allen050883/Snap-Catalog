@@ -54,6 +54,10 @@ dist/
 # Cloudflare Worker secrets for local development.
 worker/.dev.vars
 
+# wrangler dev's local state: miniflare's simulated KV/D1/cache as sqlite files,
+# plus per-run bundle/dev temp output. Machine-specific and regenerated every run.
+worker/.wrangler/
+
 # Per-environment settings and their builds.
 .env.staging
 .env.production
